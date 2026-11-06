@@ -10,7 +10,7 @@ let sb = null;
 const S = {
   role: null, uid: null, email: null, isAnon: false, loading: true, err: null,
   settings: {}, themes: [], classes: [], units: [], resources: [], quizzes: [], shop: [],
-  students: [], enrol: [], me: null, log: [], attempts: [], board: {},
+  students: [], enrol: [], me: null, log: [], attempts: [], crew: {},
   view: { name: 'home' },
   ui: { tab: 'units', shopTab: 'character', resKind: 'file', armed: null, busy: false, joinMode: 'new', color: null, focusMin: 25, focusLabel: '', focusClass: '', loginErr: '' },
   focus: null, quizRun: null, quizDraft: null, customDraft: null, celebrate: null,
@@ -134,7 +134,6 @@ async function loadAll() {
   }
 }
 async function refresh() { try { await loadAll(); } catch (e) { toast(msg(e)); } render(); }
-async function loadBoard(cid) { try { S.board[cid] = await rpc('class_leaderboard', { p_class: cid }); render(); } catch { } }
 
 /* ---------------- render core ---------------- */
 let rq = 0;
@@ -285,6 +284,72 @@ function resCard(r, teacher) {
   return `<article class="res"><span class="chip kind">${kindLabel(r)}</span><div class="body"><strong>${esc(r.title)}</strong>${r.description ? `<p class="small muted">${esc(r.description)}</p>` : ''}${inner}</div>${tools}</article>`;
 }
 
+
+/* ---------------- the skate bowl ---------------- */
+const REDUCED = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })();
+function placeChar(svg, x, y, w, h) { return svg.replace('<svg ', `<svg x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w}" height="${h}" `); }
+function bowlScene(crew, t, title) {
+  crew = (crew || []).slice().sort((a, b) => (b.lifetime || 0) - (a.lifetime || 0));
+  const n = crew.length, nRide = n ? Math.min(3, Math.ceil(n / 4)) : 0;
+  const riders = crew.slice(0, nRide), deck = crew.slice(nRide, nRide + 32), extra = Math.max(0, n - nRide - 32);
+  const W = 1000, DECK = 205;
+  const label = (x, y, txt, me, w = 92) => `<g class="bw-tag${me ? ' me' : ''}"><rect x="${(x - w / 2).toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="17" rx="2"/><text x="${x.toFixed(1)}" y="${y + 12.5}" text-anchor="middle">${esc(String(txt).slice(0, Math.max(4, Math.floor(w / 7.5))))}</text></g>`;
+  const tags = [];
+  const youMark = (x, y) => `<g class="bw-you"><text x="${x.toFixed(1)}" y="${y}" text-anchor="middle">YOU</text><path d="M${(x - 6).toFixed(1)} ${y + 4}L${x.toFixed(1)} ${y + 12}L${(x + 6).toFixed(1)} ${y + 4}Z"/></g>`;
+  // standing crew on the back deck: two rows when busy
+  const rowA = deck.length > 14 ? deck.filter((_, i) => i % 2 === 0) : deck, rowB = deck.length > 14 ? deck.filter((_, i) => i % 2 === 1) : [];
+  const standRow = (list, feetY, h, nameDy) => {
+    const w = h * 140 / 168, gap = (W - 80) / Math.max(list.length, 1);
+    return list.map((c, i) => {
+      const cx = 40 + gap * (i + .5); if (nameDy) tags.push(label(cx, feetY + nameDy, c.nickname, c.is_me, Math.min(92, gap - 4))); const x = cx - w / 2, y = feetY - h, eq = c.equipped || {}, pet = item('pet', eq.pet), gear = item('gear', eq.gear);
+      return `<g class="bw-kid"><title>${esc(c.nickname)}</title>${placeChar(charSVG(eq, c.color, '', c.nickname), x, y, w.toFixed(1), h)}
+       ${gear ? `<text class="bw-emo" x="${(x - 2).toFixed(1)}" y="${feetY - 2}" font-size="${h * .26}">${gear.emoji}</text>` : ''}
+       ${pet ? `<text class="bw-emo" x="${(x + w * .78).toFixed(1)}" y="${feetY + 2}" font-size="${h * .36}">${pet.emoji}</text>` : ''}
+       ${c.is_me ? youMark(cx, y - 4) : ''}</g>`;
+    }).join('');
+  };
+  const path = 'M124 236C128 392 202 427 330 427L670 427C798 427 872 392 876 236';
+  const riderSVG = riders.map((c, i) => {
+    const eq = c.equipped || {}, h = 74, w = h * 140 / 168, dur = 5.6 + i * 1.1, pet = item('pet', eq.pet);
+    const body = `<g transform="translate(${(-w / 2).toFixed(1)},${-h - 9})">${placeChar(charSVG(eq, c.color, '', c.nickname), 0, 0, w.toFixed(1), h)}
+      <g transform="translate(${(w / 2 - 34).toFixed(1)},${h - 2})"><rect x="0" y="0" width="68" height="8" rx="4" class="bw-deck"/><circle cx="14" cy="11" r="4.5" class="bw-wheel"/><circle cx="54" cy="11" r="4.5" class="bw-wheel"/></g>
+      ${pet ? `<text class="bw-emo" x="${(w - 4).toFixed(1)}" y="${h - 30}" font-size="24">${pet.emoji}</text>` : ''}
+      ${label(w / 2, -22, c.nickname, c.is_me)}${c.is_me ? youMark(w / 2, -34) : ''}</g>`;
+    if (REDUCED) { const xs = [330, 500, 670][i]; return `<g transform="translate(${xs},427)"><title>${esc(c.nickname)}</title>${body}</g>`; }
+    return `<g><title>${esc(c.nickname)}</title>${body}<animateMotion dur="${dur}s" begin="${(-i * 1.9).toFixed(1)}s" repeatCount="indefinite" path="${path}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
+  }).join('');
+  return `<figure class="bowl"><div class="bowl-scroll"><svg viewBox="0 0 ${W} 470" role="img" aria-label="${esc(title || 'Skate bowl')}: ${n} skater${n === 1 ? '' : 's'}">
+   <defs><linearGradient id="bw-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.b1}"/><stop offset="1" stop-color="${t.b2}"/></linearGradient>
+   <linearGradient id="bw-pool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="bw-pool-top"/><stop offset="1" class="bw-pool-bot"/></linearGradient>
+   <pattern id="bw-brick" width="48" height="24" patternUnits="userSpaceOnUse"><path d="M0 .75H48M0 12.75H48M24 0V12M0 12V24M48 12V24" stroke="#000" stroke-opacity=".3" stroke-width="1.5" fill="none"/></pattern>
+   <pattern id="bw-fence" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M0 0L18 18M18 0L0 18" class="bw-fence-line"/></pattern></defs>
+   <rect width="${W}" height="470" fill="url(#bw-sky)"/>
+   <circle cx="860" cy="58" r="34" fill="${t.accent}" opacity=".9"/>
+   <rect y="40" width="${W}" height="62" fill="url(#bw-fence)"/><rect y="38" width="${W}" height="4" class="bw-rail"/>
+   <rect y="100" width="${W}" height="${DECK - 100}" class="bw-wall"/><rect y="100" width="${W}" height="${DECK - 100}" fill="url(#bw-brick)"/>
+   <text x="70" y="160" class="bw-graf" transform="rotate(-4 70 160)">${esc(title || 'Skate Skool')}</text>
+   <rect y="${DECK - 12}" width="${W}" height="16" class="bw-backdeck"/>
+   ${standRow(rowB, DECK - 8, 54, 0)}${standRow(rowA, DECK, 66, 8)}
+   <path d="M0 ${DECK + 4}H${W}V470H0Z" class="bw-ground"/>
+   <path d="M108 ${DECK + 4}C108 400 190 442 330 442L670 442C810 442 892 400 892 ${DECK + 4}Z" fill="url(#bw-pool)" class="bw-pool"/>
+   <path d="M108 ${DECK + 4}C108 400 190 442 330 442L670 442C810 442 892 400 892 ${DECK + 4}" class="bw-edge"/>
+   <path d="M0 ${DECK + 4}H108M892 ${DECK + 4}H${W}" class="bw-coping"/><circle cx="108" cy="${DECK + 4}" r="6" class="bw-lip"/><circle cx="892" cy="${DECK + 4}" r="6" class="bw-lip"/>
+   ${tags.join('')}
+   ${n ? '' : `<text x="500" y="340" text-anchor="middle" class="bw-empty">No skaters yet. Share the join code!</text>`}
+   ${riderSVG}
+   ${extra ? `<text x="${W - 16}" y="${DECK + 30}" text-anchor="end" class="bw-more">+${extra} more</text>` : ''}
+  </svg></div><figcaption class="small muted">${nRide ? `The top ${nRide === 1 ? 'earner rides' : nRide + ' earners ride'} the bowl. Everyone else hangs out on the deck with their pets and gear.` : ''}</figcaption></figure>`;
+}
+function crewFor(cid) {
+  if (S.role === 'teacher') return studentsIn(cid).map(s => ({ nickname: s.nickname, color: s.color, equipped: s.equipped, lifetime: s.earned, is_me: false }));
+  return S.crew[cid];
+}
+async function loadCrew(cid) {
+  try { S.crew[cid] = await rpc('class_crew', { p_class: cid }); }
+  catch { try { S.crew[cid] = await rpc('class_leaderboard', { p_class: cid }); } catch { S.crew[cid] = []; } }
+  render();
+}
+
 /* ---------------- TEACHER ---------------- */
 function tHome() {
   const st = site(), t = themeById(st.home_theme), cls = S.classes.slice().sort(byOrder);
@@ -330,7 +395,7 @@ function tClass() {
     <div class="panel stack"><h3>Join code</h3><div class="row"><span style="font-family:var(--f-display);font-size:36px;letter-spacing:.15em">${esc(c.code)}</span><button class="btn" data-act="copy" data-text="${esc(c.code)}">Copy</button><button class="btn" data-act="newcode" data-id="${c.id}">Make a new code</button></div><p class="small muted">A new code stops the old one working. Skaters already in the class stay in it.</p></div>
     <div class="panel stack"><h3>Delete class</h3><p class="small muted">Deletes the class with all its units, resources, uploaded files and quizzes. Skaters keep their coins and gear.</p><div>${armBtn('class|' + c.id, 'Delete this class', 'Yes, delete everything')}</div></div>`;
   }
-  return { theme: t, html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'All classes' }, code: c.code }) + `<main class="wrap"><div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>${c.announcement && tab === 'units' ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}${body}</main>` };
+  return { theme: t, html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'All classes' }, code: c.code }) + `<main class="wrap">${bowlScene(crewFor(c.id), t, c.name)}<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>${c.announcement && tab === 'units' ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}${body}</main>` };
 }
 function tUnit() {
   const u = S.units.find(x => x.id === S.view.unitId); if (!u) return tHome();
@@ -385,7 +450,7 @@ function tThemes() {
    <div class="stack"><h2>Built-in themes</h2><div class="themepick">${THEMES.map(th => themeTile(th, false, 'tabindex="-1" style="cursor:default"')).join('')}</div></div>
    <div class="stack"><h2>Your themes</h2>${S.themes.length ? `<div class="themepick">${S.themes.map(th => `<div class="stack" style="gap:8px">${themeTile(th, S.customDraft?.id === th.id, `data-act="edittheme" data-id="${th.id}"`)}<div>${armBtn('theme|' + th.id, 'Delete', 'Confirm')}</div></div>`).join('')}</div>` : '<p class="muted">No custom themes yet. Tap one to edit it once you have some.</p>'}</div>
    <form class="panel taped stack" data-form="savetheme"><h2>${d.id ? 'Edit theme' : 'Make a theme'}</h2>
-    <section class="banner" style="${themeVars(prev)}"><div class="decor" aria-hidden="true">${prev.decor.slice(0, 4).map(e => `<span>${esc(e)}</span>`).join('')}</div><div class="wrap" style="padding-block:22px"><span class="eyebrow">Preview</span><h2 style="font-size:32px">${esc(d.name || 'My theme')}</h2><span><span class="btn sm primary" style="pointer-events:none">Button colour</span></span></div></section>
+    <section class="banner" id="th-preview" style="${themeVars(prev)}"><div class="decor" aria-hidden="true">${prev.decor.slice(0, 4).map(e => `<span>${esc(e)}</span>`).join('')}</div><div class="wrap" style="padding-block:22px"><span class="eyebrow">Preview</span><h2 style="font-size:32px">${esc(d.name || 'My theme')}</h2><span><span class="btn sm primary" style="pointer-events:none">Button colour</span></span></div></section>
     <div class="formrow"><label class="f">Theme name<input type="text" id="th-name" data-tb="name" value="${esc(d.name)}" required placeholder="e.g. Bowl Session"></label>
     <label class="f">Decorations (emoji with spaces between)<input type="text" id="th-decor" data-tb="decor" value="${esc(d.decor)}"></label>
     <label class="f" style="flex:0 1 160px">Pattern<select id="th-pattern" data-tb="pattern">${Object.keys(PATTERNS).map(p => `<option ${d.pattern === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label></div>
@@ -428,9 +493,10 @@ function quizList(qs) {
 }
 function sClass() {
   const c = S.classes.find(x => x.id === S.view.classId); if (!c) return sHome();
-  const t = classTheme(c), us = unitsOf(c.id), qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), board = S.board[c.id];
+  const t = classTheme(c), us = unitsOf(c.id), qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), crew = S.crew[c.id], board = crew && crew.slice().sort((a, b) => b.lifetime - a.lifetime).slice(0, 10);
   return { theme: t, html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'Home' } }) + `
   <main class="wrap">${c.announcement ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}
+  ${crew ? bowlScene(crew, t, c.name) : '<div class="bowl bowl-loading"><p class="scrawl">Rolling up to the bowl…</p></div>'}
   <div class="split"><div class="stack"><h2>Units</h2>${us.length ? us.map(u => { const ut = unitTheme(u); return `<button class="unitcard" data-act="openunit" data-id="${u.id}"><span class="sw" style="background:linear-gradient(120deg,${ut.b1},${ut.b2})" aria-hidden="true">${esc((ut.decor || [])[0] || '')}</span><span class="txt"><strong>${esc(u.title)}</strong><span class="small muted">${resOf(u.id).length} resources${S.quizzes.some(x => x.unit_id === u.id) ? ' · revision quiz' : ''}</span></span><span aria-hidden="true" style="font-size:22px">→</span></button>`; }).join('') : "<div class=\"empty\">Your teacher hasn't added any units yet.</div>"}
    <h2 style="margin-top:10px">Revision quizzes</h2>${quizList(qs)}</div>
    <div class="panel taped stack"><h3>Class leaderboard</h3><p class="small muted">Ranked by total coins earned.</p><div class="lb">${board ? (board.map((b, i) => `<div class="r ${b.is_me ? 'me' : ''}"><span class="rank">${i + 1}</span>${charSVG(b.equipped || {}, b.color)}<span class="n">${esc(b.nickname)}</span><span class="price"><span class="coin"></span>${b.lifetime}</span></div>`).join('') || '<p class="small muted">No one yet.</p>') : '<p class="small muted">Loading…</p>'}</div></div></div></main>` };
@@ -541,7 +607,7 @@ document.addEventListener('submit', e => { const f = e.target.closest('form[data
 document.addEventListener('input', e => {
   const el = e.target, d = S.quizDraft;
   if (d) { if (el.dataset.bind) d[el.dataset.bind] = el.dataset.bind === 'per' ? Number(el.value) || 0 : el.value; if (el.dataset.qi) d.questions[+el.dataset.qi].q = el.value; if (el.dataset.oi) d.questions[+el.dataset.oi].options[+el.dataset.oj] = el.value; }
-  if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; schedule(); }
+  if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; paintThemePreview(); }
   if (el.id === 'fx-label') S.ui.focusLabel = el.value;
 });
 document.addEventListener('change', e => {
@@ -549,13 +615,20 @@ document.addEventListener('change', e => {
   if (d && el.dataset.ai) d.questions[+el.dataset.ai].answer = +el.dataset.aj;
   if (d && el.dataset.bind === 'unit_id') d.unit_id = el.value;
   if (el.id === 'fx-class') S.ui.focusClass = el.value;
-  if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; schedule(); }
+  if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; paintThemePreview(); }
 });
+function paintThemePreview() {
+  const d = S.customDraft, sec = document.getElementById('th-preview'); if (!d || !sec) return;
+  const decor = d.decor.split(/\s+/).filter(Boolean);
+  sec.setAttribute('style', themeVars({ ...d, decor }));
+  const h = sec.querySelector('h2'); if (h) h.textContent = d.name || 'My theme';
+  const dc = sec.querySelector('.decor'); if (dc) dc.innerHTML = decor.slice(0, 4).map(e => `<span>${esc(e)}</span>`).join('');
+}
 
 A.retry = () => resolveSession();
 A.nav = el => { S.ui.loginErr = ''; if (el.dataset.to === 'teacherlogin') { go({ name: 'teacherlogin' }); return; } if (location.hash) history.replaceState(null, '', location.pathname + location.search); go({ name: el.dataset.to }); };
 A.tab = el => { S.ui.tab = el.dataset.tab; S.ui.armed = null; render(); };
-A.openclass = el => { S.ui.tab = el.dataset.tab || 'units'; S.quizRun = null; go({ name: 'class', classId: el.dataset.id }); if (S.role === 'student') loadBoard(el.dataset.id); };
+A.openclass = el => { S.ui.tab = el.dataset.tab || 'units'; S.quizRun = null; go({ name: 'class', classId: el.dataset.id }); if (S.role === 'student') loadCrew(el.dataset.id); };
 A.openunit = el => { S.quizRun = null; go({ name: 'unit', unitId: el.dataset.id }); };
 A.arm = el => {
   const k = el.dataset.key;

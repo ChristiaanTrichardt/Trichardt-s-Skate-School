@@ -256,3 +256,32 @@ details>summary{cursor:pointer;font-weight:800;text-transform:uppercase;font-siz
 code{background:var(--card-2);padding:1px 6px;border:1px solid var(--edge);font-size:.9em;overflow-wrap:anywhere}
 .footer{text-align:center;padding:10px 0 30px}
 .footer button{background:none;border:0;text-decoration:underline;cursor:pointer;color:var(--muted);font-weight:600}
+
+/* ---------- the skate bowl ---------- */
+.bowl{margin:0;display:flex;flex-direction:column;gap:6px}
+.bowl-scroll{overflow-x:auto;border:3px solid var(--edge);box-shadow:8px 8px 0 var(--shadow);background:var(--card-2)}
+.bowl svg{display:block;width:100%;min-width:640px;height:auto}
+.bowl-loading{min-height:180px;border:3px dashed var(--muted);display:grid;place-items:center;font-size:20px}
+.bowl .bw-wall{fill:color-mix(in srgb,var(--accent) 18%,#8E3F2E)}
+.bowl .bw-graf{font-family:var(--f-scrawl);font-size:46px;fill:var(--accent);stroke:#121212;stroke-width:2.5px;paint-order:stroke}
+.bowl .bw-fence-line{stroke:rgba(255,255,255,.35);stroke-width:1.5}
+.bowl .bw-rail{fill:#9AA0A6}
+.bowl .bw-backdeck{fill:#B9B9B4;stroke:#121212;stroke-width:3}
+.bowl .bw-ground{fill:#8F8F8A}
+.bowl .bw-pool{stroke:none}
+.bowl .bw-pool-top{stop-color:#C9C9C3} .bowl .bw-pool-bot{stop-color:#A6A6A0}
+.bowl .bw-edge{fill:none;stroke:#121212;stroke-width:4}
+.bowl .bw-coping{stroke:#D5D8DC;stroke-width:10;stroke-linecap:round}
+.bowl .bw-lip{fill:#D5D8DC;stroke:#121212;stroke-width:3}
+.bowl .bw-deck{fill:#FF2E88;stroke:#121212;stroke-width:2.5}
+.bowl .bw-wheel{fill:#FFE14D;stroke:#121212;stroke-width:2}
+.bowl .bw-emo{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+.bowl .bw-tag rect{fill:#121212}
+.bowl .bw-tag text{fill:#F6F6F1;font:700 11px var(--f-body);letter-spacing:.04em;text-transform:uppercase}
+.bowl .bw-tag.me rect{fill:#FF2E88}
+.bowl .bw-you text{font:800 13px var(--f-body);fill:#FF2E88;stroke:#121212;stroke-width:3px;paint-order:stroke;letter-spacing:.08em}
+.bowl .bw-you path{fill:#FF2E88;stroke:#121212;stroke-width:2}
+.bowl .bw-empty{font-family:var(--f-scrawl);font-size:30px;fill:#121212;opacity:.7}
+.bowl .bw-more{font:800 15px var(--f-body);fill:#121212}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bowl .bw-backdeck{fill:#6E6E6A} :root:not([data-theme="light"]) .bowl .bw-ground{fill:#4A4A47} :root:not([data-theme="light"]) .bowl .bw-pool-top{stop-color:#7D7D78} :root:not([data-theme="light"]) .bowl .bw-pool-bot{stop-color:#5E5E5A}}
+:root[data-theme="dark"] .bowl .bw-backdeck{fill:#6E6E6A} :root[data-theme="dark"] .bowl .bw-ground{fill:#4A4A47} :root[data-theme="dark"] .bowl .bw-pool-top{stop-color:#7D7D78} :root[data-theme="dark"] .bowl .bw-pool-bot{stop-color:#5E5E5A}
