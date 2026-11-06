@@ -285,3 +285,37 @@ code{background:var(--card-2);padding:1px 6px;border:1px solid var(--edge);font-
 .bowl .bw-more{font:800 15px var(--f-body);fill:#121212}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bowl .bw-backdeck{fill:#6E6E6A} :root:not([data-theme="light"]) .bowl .bw-ground{fill:#4A4A47} :root:not([data-theme="light"]) .bowl .bw-pool-top{stop-color:#7D7D78} :root:not([data-theme="light"]) .bowl .bw-pool-bot{stop-color:#5E5E5A}}
 :root[data-theme="dark"] .bowl .bw-backdeck{fill:#6E6E6A} :root[data-theme="dark"] .bowl .bw-ground{fill:#4A4A47} :root[data-theme="dark"] .bowl .bw-pool-top{stop-color:#7D7D78} :root[data-theme="dark"] .bowl .bw-pool-bot{stop-color:#5E5E5A}
+
+/* ---------- bowl pass ---------- */
+.pass{border:3px solid var(--edge);background:var(--card);padding:12px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:4px 4px 0 var(--shadow)}
+.pass b{font-variant-numeric:tabular-nums}
+.pass.on{background:var(--accent);color:var(--accent-ink)}
+.pass.on .progress i{background:var(--ink)}
+
+/* ---------- forms: dates ---------- */
+input[type=date]{width:100%;background:var(--paper);border:3px solid var(--edge);padding:6px 10px;color:var(--ink);font-size:16px;font-weight:500;border-radius:0}
+
+/* ---------- teacher log ---------- */
+.checkgrid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+.ck{display:flex;align-items:center;gap:8px;border:2px solid var(--edge);padding:4px 8px;cursor:pointer;background:var(--paper);font-weight:600;min-width:0}
+.ck input{width:20px;height:20px;accent-color:var(--pink);flex:none}
+.ck svg{width:30px;height:30px;flex:none}
+.ck span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck:has(input:checked){background:var(--accent);color:var(--accent-ink)}
+.linkbtn{background:none;border:0;padding:0;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
+.loglist{display:flex;flex-direction:column}
+.logrow{display:grid;grid-template-columns:110px auto minmax(110px,180px) minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-bottom:2px solid var(--card-2)}
+.logrow .logdate{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px}
+.logrow .lognote{overflow-wrap:anywhere}
+.logrow.cat-positive .chip,.logrow.cat-hw_done .chip{background:var(--good-bg);color:var(--good);border-color:var(--good)}
+.logrow.cat-concern .chip,.logrow.cat-hw_missing .chip{background:var(--bad-bg);color:var(--bad);border-color:var(--bad)}
+@media (max-width:720px){.logrow{grid-template-columns:1fr auto;gap:4px 10px}.logrow .logdate{grid-column:1/-1}}
+
+/* ---------- to-do ---------- */
+.todos{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.todo{display:flex;align-items:center;gap:10px;border:2px solid var(--edge);background:var(--paper);padding:8px 10px}
+.todo .ttext{flex:1;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.todo.done .ttext{text-decoration:line-through;text-decoration-thickness:3px;text-decoration-color:var(--pink);color:var(--muted)}
+.tick{width:30px;height:30px;flex:none;border:3px solid var(--edge);background:var(--card);cursor:pointer;font-weight:900;font-size:18px;line-height:1;display:grid;place-items:center;color:var(--accent-ink)}
+.tick[aria-pressed="true"]{background:var(--accent)}
+.chip.today{background:var(--yellow);color:#121212}

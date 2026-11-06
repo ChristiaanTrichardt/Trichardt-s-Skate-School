@@ -10,7 +10,7 @@ let sb = null;
 const S = {
   role: null, uid: null, email: null, isAnon: false, loading: true, err: null,
   settings: {}, themes: [], classes: [], units: [], resources: [], quizzes: [], shop: [],
-  students: [], enrol: [], me: null, log: [], attempts: [], crew: {},
+  students: [], enrol: [], me: null, log: [], attempts: [], crew: {}, notes: [], todos: [], weekMin: 0,
   view: { name: 'home' },
   ui: { tab: 'units', shopTab: 'character', resKind: 'file', armed: null, busy: false, joinMode: 'new', color: null, focusMin: 25, focusLabel: '', focusClass: '', loginErr: '' },
   focus: null, quizRun: null, quizDraft: null, customDraft: null, celebrate: null,
@@ -30,7 +30,11 @@ function fmtT(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0
 function fmtSize(b) { return !b ? '' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB'; }
 function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; $('#toasts').appendChild(t); setTimeout(() => t.remove(), 3800); }
 function midnight() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
-const site = () => ({ site_name: 'Skate Skool', teacher_name: '', home_theme: 'griptape', focus_rate: 1, focus_cap: 100, quiz_cap: 150, welcome: 20, ...S.settings });
+function weekStart() { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; }
+const fmtH = m => { const h = (m || 0) / 60; return (h >= 10 ? Math.round(h) : Math.round(h * 10) / 10) + ' h'; };
+const studyMin = c => site().bowl_period === 'all' ? (c.focus_min || 0) : (c.week_min ?? 0);
+const periodWord = () => site().bowl_period === 'all' ? 'in total' : 'this week';
+const site = () => ({ site_name: 'Skate Skool', teacher_name: '', home_theme: 'griptape', focus_rate: 1, focus_cap: 100, quiz_cap: 150, welcome: 20, bowl_hours: 1, bowl_period: 'week', ...S.settings });
 
 const ERR = {
   bad_code: "That code doesn't match a class. Check it with your teacher.",
@@ -55,6 +59,7 @@ function msg(e) {
   if (/Failed to fetch|NetworkError|network/i.test(m)) return "Couldn't reach the server. Check your internet and try again.";
   if (/Invalid login credentials/i.test(m)) return 'Wrong email or password.';
   if (/Email not confirmed/i.test(m)) return 'Confirm your email first (check your inbox), then sign in.';
+  if (/does not exist|Could not find the (table|function)|schema cache/i.test(m)) return 'The database needs updating. Run update-2.sql in Supabase → SQL Editor.';
   if (/row-level security|permission denied/i.test(m)) return "You don't have permission to do that.";
   return m || 'Something went wrong. Try again.';
 }
@@ -122,15 +127,22 @@ async function loadAll() {
   const [settings, themes, classes, units, resources, quizzes, shop] = await Promise.all([
     q(sb.from('settings').select('*').eq('id', 1).maybeSingle()), sel('themes'), sel('classes'), sel('units'), sel('resources'), sel('quizzes'), sel('shop_items')]);
   Object.assign(S, { settings: settings || {}, themes, classes, units, resources, quizzes, shop });
+  const opt = p => p.then(r => r, () => []); // tables added in update 2: don't break the site if it hasn't been run yet
   if (S.role === 'teacher') {
-    const [students, enrol] = await Promise.all([sel('students', STUDENT_COLS), sel('enrolments')]);
-    S.students = students; S.enrol = enrol;
+    const [students, enrol, notes, todos] = await Promise.all([
+      sel('students', STUDENT_COLS + ',real_name').catch(() => sel('students', STUDENT_COLS)), sel('enrolments'),
+      opt(q(sb.from('student_log').select('*').order('logged_on', { ascending: false }).order('created_at', { ascending: false }).limit(3000))),
+      opt(q(sb.from('todos').select('*').order('created_at')))]);
+    S.students = students; S.enrol = enrol; S.notes = notes; S.todos = todos;
   } else {
     const [me, enrol, log, attempts] = await Promise.all([
       q(sb.from('students').select(STUDENT_COLS).maybeSingle()), sel('enrolments'),
       q(sb.from('coin_log').select('amount,reason,created_at').order('created_at', { ascending: false }).limit(10)),
       q(sb.from('quiz_attempts').select('quiz_id,score,total,coins,created_at').order('created_at', { ascending: false }).limit(1000))]);
     S.me = me; S.enrol = enrol; S.log = log; S.attempts = attempts;
+    const [todos, week] = await Promise.all([opt(q(sb.from('todos').select('*').order('created_at'))),
+      opt(q(sb.from('focus_sessions').select('minutes,completed_at').not('completed_at', 'is', null).gte('completed_at', weekStart().toISOString())))]);
+    S.todos = todos; S.weekMin = week.reduce((a, f) => a + f.minutes, 0);
   }
 }
 async function refresh() { try { await loadAll(); } catch (e) { toast(msg(e)); } render(); }
@@ -164,11 +176,11 @@ function view() {
   if (S.view.name === 'teacherlogin' && S.role !== 'teacher') out = teacherLogin();
   else if (S.role === 'teacher') {
     const v = S.view.name;
-    out = v === 'class' ? tClass() : v === 'unit' ? tUnit() : v === 'themes' ? tThemes() : v === 'settings' ? tSettings() : v === 'quizedit' ? tQuizEdit() : tHome();
+    out = v === 'class' ? tClass() : v === 'unit' ? tUnit() : v === 'todo' ? todoPage() : v === 'themes' ? tThemes() : v === 'settings' ? tSettings() : v === 'quizedit' ? tQuizEdit() : tHome();
   } else if (S.role === 'pending') out = pendingView();
   else if (S.role === 'student' && S.me) {
     const v = S.view.name;
-    out = v === 'class' ? sClass() : v === 'unit' ? sUnit() : v === 'focus' ? sFocus() : v === 'shop' ? sShop() : v === 'den' ? sDen() : v === 'quiz' ? sQuiz() : sHome();
+    out = v === 'class' ? sClass() : v === 'unit' ? sUnit() : v === 'todo' ? todoPage() : v === 'focus' ? sFocus() : v === 'shop' ? sShop() : v === 'den' ? sDen() : v === 'quiz' ? sQuiz() : sHome();
   } else out = joinView();
   const err = S.err ? `<div class="wrap" style="padding-top:16px"><div class="alert">${esc(S.err)} <button class="btn sm" data-act="retry">Try again</button></div></div>` : '';
   return { theme: out.theme || home, html: topbar() + err + out.html };
@@ -178,8 +190,8 @@ const BOARD_SVG = `<svg viewBox="0 0 64 40" aria-hidden="true"><rect x="3" y="8"
 function topbar() {
   const st = site(), v = S.view.name;
   let navs = [];
-  if (S.role === 'teacher') navs = [['home', 'Classes'], ['themes', 'Themes'], ['settings', 'Settings']];
-  else if (S.role === 'student' && S.me) navs = [['home', 'Home'], ['focus', 'Focus'], ['shop', 'Shop'], ['den', 'Hangout']];
+  if (S.role === 'teacher') navs = [['home', 'Classes'], ['todo', 'To-do'], ['themes', 'Themes'], ['settings', 'Settings']];
+  else if (S.role === 'student' && S.me) navs = [['home', 'Home'], ['focus', 'Focus'], ['todo', 'To-do'], ['shop', 'Shop'], ['den', 'Hangout']];
   const cur = n => (v === n || (n === 'home' && ['class', 'unit', 'quizedit', 'quiz'].includes(v))) ? 'aria-current="page"' : '';
   let right = '';
   if (S.focus && S.role === 'student') { const rem = remaining(); right += `<button class="minitimer" data-act="nav" data-to="focus" id="minitimer" aria-label="Focus session running">⏱ ${fmtT(rem)}</button>`; }
@@ -289,9 +301,11 @@ function resCard(r, teacher) {
 const REDUCED = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })();
 function placeChar(svg, x, y, w, h) { return svg.replace('<svg ', `<svg x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w}" height="${h}" `); }
 function bowlScene(crew, t, title) {
-  crew = (crew || []).slice().sort((a, b) => (b.lifetime || 0) - (a.lifetime || 0));
-  const n = crew.length, nRide = n ? Math.min(3, Math.ceil(n / 4)) : 0;
-  const riders = crew.slice(0, nRide), deck = crew.slice(nRide, nRide + 32), extra = Math.max(0, n - nRide - 32);
+  const need = Math.max(0, Number(site().bowl_hours) || 0) * 60;
+  crew = (crew || []).slice().sort((a, b) => studyMin(b) - studyMin(a));
+  const n = crew.length, qualified = crew.filter(c => studyMin(c) >= need && (need > 0 || studyMin(c) > 0));
+  const riders = qualified.slice(0, 8), riderSet = new Set(riders), rest = crew.filter(c => !riderSet.has(c));
+  const nRide = riders.length, deck = rest.slice(0, 32), extra = Math.max(0, rest.length - 32);
   const W = 1000, DECK = 205;
   const label = (x, y, txt, me, w = 92) => `<g class="bw-tag${me ? ' me' : ''}"><rect x="${(x - w / 2).toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="17" rx="2"/><text x="${x.toFixed(1)}" y="${y + 12.5}" text-anchor="middle">${esc(String(txt).slice(0, Math.max(4, Math.floor(w / 7.5))))}</text></g>`;
   const tags = [];
@@ -310,13 +324,13 @@ function bowlScene(crew, t, title) {
   };
   const path = 'M124 236C128 392 202 427 330 427L670 427C798 427 872 392 876 236';
   const riderSVG = riders.map((c, i) => {
-    const eq = c.equipped || {}, h = 74, w = h * 140 / 168, dur = 5.6 + i * 1.1, pet = item('pet', eq.pet);
+    const eq = c.equipped || {}, h = 74, w = h * 140 / 168, dur = 5.4 + (i % 4) * 0.9 + Math.floor(i / 4) * 0.45, pet = item('pet', eq.pet);
     const body = `<g transform="translate(${(-w / 2).toFixed(1)},${-h - 9})">${placeChar(charSVG(eq, c.color, '', c.nickname), 0, 0, w.toFixed(1), h)}
       <g transform="translate(${(w / 2 - 34).toFixed(1)},${h - 2})"><rect x="0" y="0" width="68" height="8" rx="4" class="bw-deck"/><circle cx="14" cy="11" r="4.5" class="bw-wheel"/><circle cx="54" cy="11" r="4.5" class="bw-wheel"/></g>
       ${pet ? `<text class="bw-emo" x="${(w - 4).toFixed(1)}" y="${h - 30}" font-size="24">${pet.emoji}</text>` : ''}
       ${label(w / 2, -22, c.nickname, c.is_me)}${c.is_me ? youMark(w / 2, -34) : ''}</g>`;
-    if (REDUCED) { const xs = [330, 500, 670][i]; return `<g transform="translate(${xs},427)"><title>${esc(c.nickname)}</title>${body}</g>`; }
-    return `<g><title>${esc(c.nickname)}</title>${body}<animateMotion dur="${dur}s" begin="${(-i * 1.9).toFixed(1)}s" repeatCount="indefinite" path="${path}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
+    if (REDUCED) { const xs = 300 + (i % 4) * 130 + Math.floor(i / 4) * 60; return `<g transform="translate(${xs},427)"><title>${esc(c.nickname)}</title>${body}</g>`; }
+    return `<g><title>${esc(c.nickname)}</title>${body}<animateMotion dur="${dur}s" begin="${(-i * 1.37).toFixed(2)}s" repeatCount="indefinite" path="${path}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
   }).join('');
   return `<figure class="bowl"><div class="bowl-scroll"><svg viewBox="0 0 ${W} 470" role="img" aria-label="${esc(title || 'Skate bowl')}: ${n} skater${n === 1 ? '' : 's'}">
    <defs><linearGradient id="bw-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.b1}"/><stop offset="1" stop-color="${t.b2}"/></linearGradient>
@@ -338,11 +352,17 @@ function bowlScene(crew, t, title) {
    ${n ? '' : `<text x="500" y="340" text-anchor="middle" class="bw-empty">No skaters yet. Share the join code!</text>`}
    ${riderSVG}
    ${extra ? `<text x="${W - 16}" y="${DECK + 30}" text-anchor="end" class="bw-more">+${extra} more</text>` : ''}
-  </svg></div><figcaption class="small muted">${nRide ? `The top ${nRide === 1 ? 'earner rides' : nRide + ' earners ride'} the bowl. Everyone else hangs out on the deck with their pets and gear.` : ''}</figcaption></figure>`;
+  </svg></div><figcaption class="small muted">Study ${esc(String(site().bowl_hours))} ${Number(site().bowl_hours) === 1 ? 'hour' : 'hours'} ${periodWord()} in focus sessions to ride the bowl. ${nRide ? `${nRide} skater${nRide === 1 ? ' is' : 's are'} riding${qualified.length > nRide ? ` (${qualified.length} unlocked)` : ''}.` : 'Nobody has unlocked it yet.'} Everyone else hangs out on the deck.</figcaption></figure>`;
 }
 function crewFor(cid) {
-  if (S.role === 'teacher') return studentsIn(cid).map(s => ({ nickname: s.nickname, color: s.color, equipped: s.equipped, lifetime: s.earned, is_me: false }));
+  if (S.crew[cid] && S.crew[cid].length && 'week_min' in S.crew[cid][0]) return S.crew[cid];
+  if (S.role === 'teacher') return studentsIn(cid).map(s => ({ nickname: s.nickname, color: s.color, equipped: s.equipped, lifetime: s.earned, focus_min: s.focus_min, week_min: S.crew[cid] ? 0 : undefined, is_me: false }));
   return S.crew[cid];
+}
+function bowlPass() {
+  const need = Math.max(0, Number(site().bowl_hours) || 0) * 60, have = site().bowl_period === 'all' ? (S.me?.focus_min || 0) : S.weekMin, pct = need ? Math.min(100, have / need * 100) : 100;
+  const done = have >= need && have > 0;
+  return `<div class="pass ${done ? 'on' : ''}"><div class="row between"><span class="label">Bowl pass</span><b>${fmtH(have)} / ${fmtH(need)} ${periodWord()}</b></div><div class="progress"><i style="width:${pct.toFixed(0)}%"></i></div><span class="small">${done ? "You're riding the bowl! 🛹" : `Study ${fmtH(need - have)} more in focus sessions to ride the bowl.`}</span></div>`;
 }
 async function loadCrew(cid) {
   try { S.crew[cid] = await rpc('class_crew', { p_class: cid }); }
@@ -367,7 +387,7 @@ function tHome() {
 function tClass() {
   const c = S.classes.find(x => x.id === S.view.classId); if (!c) return tHome();
   const t = classTheme(c), tab = S.ui.tab;
-  const tabs = [['units', 'Units'], ['revision', 'Revision quizzes'], ['students', 'Skaters'], ['settings', 'Class settings']];
+  const tabs = [['units', 'Units'], ['revision', 'Revision quizzes'], ['students', 'Skaters'], ['log', 'Log'], ['settings', 'Class settings']];
   let body = '';
   if (tab === 'units') {
     const us = unitsOf(c.id);
@@ -379,13 +399,15 @@ function tClass() {
     ${qs.length ? `<div class="stack">${qs.map(x => { const u = S.units.find(y => y.id === x.unit_id); return `<div class="res"><span class="chip kind">QUIZ</span><div class="body"><strong>${esc(x.title)}</strong><span class="small muted">${(x.questions || []).length} questions · ${x.per} coins per correct answer${u ? ' · ' + esc(u.title) : ''}</span></div><div class="row" style="gap:6px"><button class="btn sm" data-act="editquiz" data-id="${x.id}">Edit</button>${armBtn('quiz|' + x.id, 'Delete', 'Confirm')}</div></div>`; }).join('')}</div>` : `<div class="empty"><strong>No quizzes yet</strong><span>Quizzes are how skaters earn coins from revision.</span></div>`}`;
   } else if (tab === 'students') {
     const st = studentsIn(c.id).sort((a, b) => b.earned - a.earned);
-    body = st.length ? `<div class="panel"><div class="tablewrap"><table><thead><tr><th>Skater</th><th></th><th>Coins</th><th>Earned</th><th>Focus</th><th>Quizzes</th><th>Give coins</th><th>Reset PIN</th><th></th></tr></thead><tbody>${st.map(s => `<tr>
-     <td><b>${esc(s.nickname)}</b></td><td>${charSVG(eqOf(s), s.color)}</td><td class="num">${balance(s)}</td><td class="num">${s.earned}</td><td class="num">${s.focus_min} min</td><td class="num">${s.quizzes_done}</td>
+    body = st.length ? `<div class="panel"><div class="tablewrap"><table><thead><tr><th>Skater</th><th>Real name</th><th></th><th>Coins</th><th>Focus (all time)</th><th>Quizzes</th><th>Give coins</th><th>Reset PIN</th><th></th></tr></thead><tbody>${st.map(s => `<tr>
+     <td><b>${esc(s.nickname)}</b></td><td><div class="row" style="gap:4px;flex-wrap:nowrap"><input type="text" id="rn-${s.id}" value="${esc(s.real_name || '')}" placeholder="Add name" style="width:140px" aria-label="Real name for ${esc(s.nickname)}"><button class="btn sm" data-act="realname" data-id="${s.id}">Save</button></div></td><td>${charSVG(eqOf(s), s.color)}</td><td class="num">${balance(s)}</td><td class="num">${fmtH(s.focus_min)}</td><td class="num">${s.quizzes_done}</td>
      <td><div class="row" style="gap:4px;flex-wrap:nowrap"><input type="number" id="aw-${s.id}" value="10" style="width:80px" aria-label="Coins to give ${esc(s.nickname)}"><button class="btn sm coinbtn" data-act="award" data-id="${s.id}">Give</button></div></td>
      <td><div class="row" style="gap:4px;flex-wrap:nowrap"><input type="text" id="rp-${s.id}" maxlength="4" inputmode="numeric" placeholder="0000" style="width:80px" aria-label="New PIN for ${esc(s.nickname)}"><button class="btn sm" data-act="resetpin" data-id="${s.id}">Set</button></div></td>
      <td><div class="row" style="gap:4px;flex-wrap:nowrap">${armBtn('kick|' + s.id + '|' + c.id, 'Remove', 'Confirm')}</div></td></tr>`).join('')}</tbody></table></div></div>
      <p class="small muted">Type a negative number to take coins back. "Remove" takes the skater out of this class only; they keep their coins and gear. A skater who forgets their PIN can be given a new one here.</p>`
       : `<div class="empty"><strong>No skaters yet</strong><span>Give your class the website link and the join code <b>${esc(c.code)}</b>.</span></div>`;
+  } else if (tab === 'log') {
+    body = logTab(c);
   } else {
     body = `<form class="panel stack" data-form="classset" data-id="${c.id}"><h3>Class details</h3>
     <div class="formrow"><label class="f">Class name<input type="text" id="cs-name-${c.id}" value="${esc(c.name)}" required></label><label class="f">Short description<input type="text" id="cs-sub-${c.id}" value="${esc(c.subtitle || '')}"></label></div>
@@ -465,9 +487,66 @@ function tSettings() {
    <div class="formrow"><label class="f">Website name<input type="text" id="st-name" value="${esc(st.site_name)}"></label><label class="f">Your name as skaters see it<input type="text" id="st-teacher" value="${esc(st.teacher_name)}" placeholder="e.g. Mr T"></label><label class="f">Home page theme<select id="st-theme">${themeOptions(st.home_theme)}</select></label></div>
    <h3>Coin rules</h3>
    <div class="formrow"><label class="f">Coins per focus minute<input type="number" min="0" max="10" id="st-rate" value="${st.focus_rate}"></label><label class="f">Daily focus coin limit<input type="number" min="0" id="st-fcap" value="${st.focus_cap}"></label><label class="f">Daily quiz coin limit<input type="number" min="0" id="st-qcap" value="${st.quiz_cap}"></label><label class="f">Welcome bonus<input type="number" min="0" id="st-welcome" value="${st.welcome}"></label></div>
+   <h3>The bowl</h3>
+   <div class="formrow"><label class="f">Hours of focus to ride the bowl<input type="number" min="0" max="100" step="0.5" id="st-bowlh" value="${st.bowl_hours}"></label><label class="f">Count hours<select id="st-bowlp"><option value="week" ${st.bowl_period !== 'all' ? 'selected' : ''}>This week (resets every Monday)</option><option value="all" ${st.bowl_period === 'all' ? 'selected' : ''}>All time</option></select></label></div>
    <div><button class="btn primary">Save settings</button></div></form>
    <div class="panel stack"><h2>Shop prices</h2><p>Change any price or name in Supabase under <b>Table Editor → shop_items</b>. Changes show up next time the page loads.</p></div>
   </main>` };
+}
+
+
+/* ---------------- teacher log ---------------- */
+const LOG_CATS = [['positive', '⭐', 'Positive behaviour'], ['concern', '⚠️', 'Behaviour concern'], ['hw_done', '✅', 'Homework done'], ['hw_missing', '❌', 'Homework missing'], ['note', '📝', 'Note']];
+const catOf = k => LOG_CATS.find(x => x[0] === k) || LOG_CATS[4];
+const tname = s => s ? (s.real_name ? `${s.real_name} (${s.nickname})` : s.nickname) : 'Removed student';
+const todayStr = () => new Date().toLocaleDateString('en-CA');
+function fmtDate(d) { if (!d) return ''; const x = new Date(d + 'T00:00:00'); return x.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }); }
+function logTab(c) {
+  const st = studentsIn(c.id).sort((a, b) => tname(a).localeCompare(tname(b)));
+  if (!st.length) return `<div class="empty"><strong>No skaters yet</strong><span>Once students join with code <b>${esc(c.code)}</b> you can log behaviour and homework here.</span></div>`;
+  const cat = S.ui.logCat || 'positive', fs = S.ui.logStudent || '', fc = S.ui.logFilterCat || '';
+  const notes = S.notes.filter(n => n.class_id === c.id), byId = Object.fromEntries(S.students.map(x => [x.id, x]));
+  const shown = notes.filter(n => (!fs || n.student_id === fs) && (!fc || n.category === fc));
+  const counts = {}; for (const n of notes) { const k = counts[n.student_id] || (counts[n.student_id] = {}); k[n.category] = (k[n.category] || 0) + 1; }
+  return `<form class="panel taped stack" data-form="logadd" data-id="${c.id}"><h3>Quick log</h3>
+   <div class="row" role="radiogroup" aria-label="Type of entry">${LOG_CATS.map(([k, e, l]) => `<button type="button" class="btn sm ${cat === k ? 'primary' : ''}" aria-pressed="${cat === k}" data-act="logcat" data-cat="${k}">${e} ${l}</button>`).join('')}</div>
+   <div class="formrow"><label class="f">${cat.startsWith('hw') ? 'Homework task' : 'What happened?'}<input type="text" id="lg-note-${c.id}" maxlength="300" placeholder="${cat.startsWith('hw') ? 'e.g. Chapter 3 worksheet' : 'e.g. Helped a classmate with the prac'}"></label>
+   <label class="f" style="flex:0 1 180px">Date<input type="date" id="lg-date-${c.id}" value="${todayStr()}"></label>
+   <label class="f" style="flex:0 1 150px">Also give coins<input type="number" id="lg-coins-${c.id}" value="0"></label></div>
+   <div class="row between"><span class="label">Students</span><span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="logall" data-on="1">Select all</button><button type="button" class="btn sm" data-act="logall" data-on="0">Clear</button></span></div>
+   <div class="checkgrid">${st.map(x => `<label class="ck"><input type="checkbox" id="lg-s-${x.id}" data-logstu="${x.id}">${charSVG(eqOf(x), x.color)}<span>${esc(tname(x))}</span></label>`).join('')}</div>
+   <div><button class="btn primary" ${S.ui.busy ? 'disabled' : ''}>Save to log</button></div>
+   <p class="small muted">Tick everyone it applies to and save once. For a homework check, pick "Homework done", type the task, and tick the students who handed it in. Students never see this log.</p></form>
+  <div class="panel stack"><h3>Summary</h3><div class="tablewrap"><table><thead><tr><th>Student</th>${LOG_CATS.map(([k, e, l]) => `<th title="${l}">${e}</th>`).join('')}<th>Latest</th></tr></thead><tbody>
+   ${st.map(x => { const k = counts[x.id] || {}, last = notes.find(n => n.student_id === x.id); return `<tr><td><button class="linkbtn" data-act="logfilter" data-stu="${x.id}">${esc(tname(x))}</button></td>${LOG_CATS.map(([cc]) => `<td class="num">${k[cc] || ''}</td>`).join('')}<td class="small muted">${last ? `${catOf(last.category)[1]} ${esc(fmtDate(last.logged_on))}` : '—'}</td></tr>`; }).join('')}</tbody></table></div></div>
+  <div class="panel stack"><div class="section-h"><h3>Entries</h3><button class="btn sm" data-act="logcsv" data-id="${c.id}">Download CSV</button></div>
+   <div class="formrow"><label class="f">Student<select id="lgf-stu" data-logf="stu"><option value="">Everyone</option>${st.map(x => `<option value="${x.id}" ${fs === x.id ? 'selected' : ''}>${esc(tname(x))}</option>`).join('')}</select></label>
+   <label class="f">Type<select id="lgf-cat" data-logf="cat"><option value="">All types</option>${LOG_CATS.map(([k, e, l]) => `<option value="${k}" ${fc === k ? 'selected' : ''}>${e} ${l}</option>`).join('')}</select></label></div>
+   ${shown.length ? `<div class="loglist">${shown.slice(0, 200).map(n => { const [, e, l] = catOf(n.category); return `<div class="logrow cat-${n.category}"><span class="logdate">${esc(fmtDate(n.logged_on))}</span><span class="chip" title="${l}">${e} ${l}</span><b>${esc(tname(byId[n.student_id]))}</b><span class="lognote">${esc(n.note)}${n.coins ? ` <span class="price">(${n.coins > 0 ? '+' : ''}${n.coins} <span class="coin"></span>)</span>` : ''}</span>${armBtn('log|' + n.id, '×', 'Delete')}</div>`; }).join('')}</div>${shown.length > 200 ? `<p class="small muted">Showing the latest 200. Download the CSV for everything.</p>` : ''}` : '<p class="muted">No entries yet.</p>'}</div>`;
+}
+
+/* ---------------- to-do lists ---------------- */
+function sortedTodos() { return S.todos.slice().sort((a, b) => (a.done - b.done) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.created_at).localeCompare(String(b.created_at))); }
+function dueChip(d, done) {
+  if (!d) return ''; const t = todayStr(), tm = new Date(); tm.setDate(tm.getDate() + 1); const tom = tm.toLocaleDateString('en-CA');
+  const cls = done ? '' : d < t ? 'warn' : d === t ? 'today' : '';
+  return `<span class="chip ${cls}">${d < t && !done ? 'Overdue · ' : ''}${d === t ? 'Today' : d === tom ? 'Tomorrow' : esc(fmtDate(d))}</span>`;
+}
+function todoRow(x) {
+  return `<li class="todo ${x.done ? 'done' : ''}"><button class="tick" data-act="todotoggle" data-id="${x.id}" aria-pressed="${x.done}" aria-label="${x.done ? 'Mark not done' : 'Mark done'}: ${esc(x.text)}">${x.done ? '✓' : ''}</button><span class="ttext">${esc(x.text)}</span>${dueChip(x.due, x.done)}<button class="iconbtn" data-act="tododel" data-id="${x.id}" aria-label="Delete ${esc(x.text)}">×</button></li>`;
+}
+function todoPage() {
+  const t = S.role === 'teacher' ? themeById(site().home_theme) : homeTheme(), list = sortedTodos(), open = list.filter(x => !x.done), done = list.filter(x => x.done);
+  return { theme: t, html: banner(t, { eyebrow: S.role === 'teacher' ? 'Teacher HQ' : 'Stay on top of it', title: 'To-do list', sub: S.role === 'teacher' ? 'Your own list. Students never see it.' : 'Only you can see this list. Tick things off as you smash them.' }) + `
+  <main class="wrap"><div class="split"><div class="stack">
+   <form class="panel taped stack" data-form="todoadd"><h3>Add a task</h3><div class="formrow"><label class="f">Task<input type="text" id="td-text" maxlength="200" required placeholder="${S.role === 'teacher' ? 'e.g. Mark Year 9 tests' : 'e.g. Finish science worksheet'}"></label><label class="f" style="flex:0 1 180px">Due (optional)<input type="date" id="td-due"></label><button class="btn primary">Add</button></div></form>
+   <div class="panel stack"><h3>To do (${open.length})</h3>${open.length ? `<ul class="todos">${open.map(todoRow).join('')}</ul>` : '<p class="muted">All clear. Nice.</p>'}</div>
+   ${done.length ? `<div class="panel stack"><div class="section-h"><h3>Done (${done.length})</h3><button class="btn sm" data-act="todoclear">Clear done</button></div><ul class="todos">${done.map(todoRow).join('')}</ul></div>` : ''}
+  </div><div class="stack">${S.role === 'student' ? bowlPass() : ''}</div></div></main>` };
+}
+function todoPeek() {
+  const open = sortedTodos().filter(x => !x.done);
+  return `<div class="panel stack"><div class="section-h"><h3>Up next</h3><button class="btn sm" data-act="nav" data-to="todo">Open to-do list</button></div>${open.length ? `<ul class="todos">${open.slice(0, 3).map(todoRow).join('')}</ul>${open.length > 3 ? `<p class="small muted">+${open.length - 3} more</p>` : ''}` : '<p class="small muted">Nothing on your list. Add homework and study tasks so you don\'t forget them.</p>'}</div>`;
 }
 
 /* ---------------- STUDENT ---------------- */
@@ -480,7 +559,9 @@ function sHome() {
   return { theme: t, html: banner(t, { eyebrow: site().site_name, title: `Yo, ${s.nickname}!`, sub: 'Earn coins with focus sessions and revision quizzes, then spend them in the shop.' }) + `
   <main class="wrap"><div class="hero">${den(eqOf(s), s.color, s.nickname)}
    <div class="stack"><div class="row"><div class="stat"><b><span class="coin"></span>${balance(s)}</b><span>Coins to spend</span></div><div class="stat"><b>${s.focus_min}</b><span>Focus minutes</span></div><div class="stat"><b>${s.quizzes_done}</b><span>Quizzes done</span></div></div>
-   <div class="row"><button class="btn primary" data-act="nav" data-to="focus">Start a focus session</button><button class="btn coinbtn" data-act="nav" data-to="shop">Hit the shop</button><button class="btn" data-act="nav" data-to="den">Customise</button></div></div></div>
+   ${bowlPass()}
+   <div class="row"><button class="btn primary" data-act="nav" data-to="focus">Start a focus session</button><button class="btn coinbtn" data-act="nav" data-to="shop">Hit the shop</button><button class="btn" data-act="nav" data-to="todo">To-do list</button></div></div></div>
+   ${todoPeek()}
    <h2>My classes</h2>
    ${mc.length ? `<div class="grid">${mc.map(c => { const ct = classTheme(c); return sticker(ct, c.name, (ct.decor || [])[0], `<span class="small muted">${esc(c.subtitle || '')}</span>${c.announcement ? `<span class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📣 ${esc(c.announcement)}</span>` : ''}`, `data-act="openclass" data-id="${c.id}"`); }).join('')}</div>` : `<div class="empty">You're not in any classes right now. Add one with a join code below.</div>`}
    <div class="split"><form class="panel stack" data-form="joinmore"><h3>Join another class</h3><div class="formrow"><label class="f">Join code<input type="text" id="jm-code" maxlength="6" autocomplete="off" style="text-transform:uppercase;letter-spacing:.2em" placeholder="ABC123" required></label><button class="btn primary">Join</button></div></form>
@@ -493,13 +574,13 @@ function quizList(qs) {
 }
 function sClass() {
   const c = S.classes.find(x => x.id === S.view.classId); if (!c) return sHome();
-  const t = classTheme(c), us = unitsOf(c.id), qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), crew = S.crew[c.id], board = crew && crew.slice().sort((a, b) => b.lifetime - a.lifetime).slice(0, 10);
+  const t = classTheme(c), us = unitsOf(c.id), qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), crew = S.crew[c.id], board = crew && crew.slice().sort((a, b) => studyMin(b) - studyMin(a)).slice(0, 10);
   return { theme: t, html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'Home' } }) + `
   <main class="wrap">${c.announcement ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}
   ${crew ? bowlScene(crew, t, c.name) : '<div class="bowl bowl-loading"><p class="scrawl">Rolling up to the bowl…</p></div>'}
   <div class="split"><div class="stack"><h2>Units</h2>${us.length ? us.map(u => { const ut = unitTheme(u); return `<button class="unitcard" data-act="openunit" data-id="${u.id}"><span class="sw" style="background:linear-gradient(120deg,${ut.b1},${ut.b2})" aria-hidden="true">${esc((ut.decor || [])[0] || '')}</span><span class="txt"><strong>${esc(u.title)}</strong><span class="small muted">${resOf(u.id).length} resources${S.quizzes.some(x => x.unit_id === u.id) ? ' · revision quiz' : ''}</span></span><span aria-hidden="true" style="font-size:22px">→</span></button>`; }).join('') : "<div class=\"empty\">Your teacher hasn't added any units yet.</div>"}
    <h2 style="margin-top:10px">Revision quizzes</h2>${quizList(qs)}</div>
-   <div class="panel taped stack"><h3>Class leaderboard</h3><p class="small muted">Ranked by total coins earned.</p><div class="lb">${board ? (board.map((b, i) => `<div class="r ${b.is_me ? 'me' : ''}"><span class="rank">${i + 1}</span>${charSVG(b.equipped || {}, b.color)}<span class="n">${esc(b.nickname)}</span><span class="price"><span class="coin"></span>${b.lifetime}</span></div>`).join('') || '<p class="small muted">No one yet.</p>') : '<p class="small muted">Loading…</p>'}</div></div></div></main>` };
+   <div class="panel taped stack"><h3>Study leaderboard</h3><p class="small muted">Ranked by hours studied ${periodWord()}.</p><div class="lb">${board ? (board.map((b, i) => `<div class="r ${b.is_me ? 'me' : ''}"><span class="rank">${i + 1}</span>${charSVG(b.equipped || {}, b.color)}<span class="n">${esc(b.nickname)}</span><span class="price">${fmtH(studyMin(b))}</span></div>`).join('') || '<p class="small muted">No one yet.</p>') : '<p class="small muted">Loading…</p>'}</div></div></div></main>` };
 }
 function sUnit() {
   const u = S.units.find(x => x.id === S.view.unitId); if (!u) return sHome();
@@ -522,7 +603,7 @@ function sFocus() {
     body = `<div class="timerwrap"><h2>How long are you riding?</h2><div class="durations">${[10, 15, 25, 40].map(m => `<button data-act="fmin" data-m="${m}" aria-pressed="${m === sel}"><b>${m}</b><span class="small">min · ${m * st.focus_rate} coins</span></button>`).join('')}</div>
     <div class="formrow" style="max-width:580px;width:100%"><label class="f">What are you working on?<input type="text" id="fx-label" maxlength="120" placeholder="e.g. Unit 2 summary notes" value="${esc(S.ui.focusLabel)}"></label><label class="f">Class<select id="fx-class"><option value="">—</option>${mc.map(c => `<option value="${c.id}" ${S.ui.focusClass === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label></div>
     <button class="btn primary big" data-act="fstart" ${S.ui.busy ? 'disabled' : ''}>Start focusing</button>
-    <p class="small muted">Up to ${st.focus_cap} focus coins a day.</p></div>`;
+    <p class="small muted">Up to ${st.focus_cap} focus coins a day. Focus time also counts towards your bowl pass.</p><div style="width:100%;max-width:580px">${bowlPass()}</div></div>`;
   }
   return { theme: t, html: banner(t, { eyebrow: 'Study', title: 'Focus session', sub: 'Pick one task and grind until the timer runs out.' }) + `<main class="wrap"><div class="panel">${body}</div></main>` };
 }
@@ -615,6 +696,7 @@ document.addEventListener('change', e => {
   if (d && el.dataset.ai) d.questions[+el.dataset.ai].answer = +el.dataset.aj;
   if (d && el.dataset.bind === 'unit_id') d.unit_id = el.value;
   if (el.id === 'fx-class') S.ui.focusClass = el.value;
+  if (el.dataset.logf) { if (el.dataset.logf === 'stu') S.ui.logStudent = el.value; else S.ui.logFilterCat = el.value; render(); }
   if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; paintThemePreview(); }
 });
 function paintThemePreview() {
@@ -628,7 +710,7 @@ function paintThemePreview() {
 A.retry = () => resolveSession();
 A.nav = el => { S.ui.loginErr = ''; if (el.dataset.to === 'teacherlogin') { go({ name: 'teacherlogin' }); return; } if (location.hash) history.replaceState(null, '', location.pathname + location.search); go({ name: el.dataset.to }); };
 A.tab = el => { S.ui.tab = el.dataset.tab; S.ui.armed = null; render(); };
-A.openclass = el => { S.ui.tab = el.dataset.tab || 'units'; S.quizRun = null; go({ name: 'class', classId: el.dataset.id }); if (S.role === 'student') loadCrew(el.dataset.id); };
+A.openclass = el => { S.ui.tab = el.dataset.tab || 'units'; S.quizRun = null; go({ name: 'class', classId: el.dataset.id }); loadCrew(el.dataset.id); };
 A.openunit = el => { S.quizRun = null; go({ name: 'unit', unitId: el.dataset.id }); };
 A.arm = el => {
   const k = el.dataset.key;
@@ -771,10 +853,11 @@ F.savetheme = () => act(async () => {
 }, 'Theme saved').catch(() => { });
 F.site = () => act(async () => {
   const n = id => Math.max(0, Math.round(Number($(id).value) || 0));
-  await q(sb.from('settings').update({ site_name: $('#st-name').value.trim() || 'Skate Skool', teacher_name: $('#st-teacher').value.trim(), home_theme: $('#st-theme').value, focus_rate: n('#st-rate'), focus_cap: n('#st-fcap'), quiz_cap: n('#st-qcap'), welcome: n('#st-welcome') }).eq('id', 1));
+  await q(sb.from('settings').update({ site_name: $('#st-name').value.trim() || 'Skate Skool', teacher_name: $('#st-teacher').value.trim(), home_theme: $('#st-theme').value, focus_rate: n('#st-rate'), focus_cap: n('#st-fcap'), quiz_cap: n('#st-qcap'), welcome: n('#st-welcome'), bowl_hours: Math.max(0, Math.round((Number($('#st-bowlh').value) || 0) * 2) / 2), bowl_period: $('#st-bowlp').value }).eq('id', 1));
   await refresh();
 }, 'Settings saved').catch(() => { });
 A.award = el => act(async () => { const n = parseInt($('#aw-' + el.dataset.id).value, 10); if (!n) throw new Error('Enter a number of coins.'); await rpc('award_coins', { p_student: el.dataset.id, p_amount: n, p_reason: 'From your teacher' }); await refresh(); }, 'Coins sent').catch(() => { });
+A.realname = el => act(async () => { await rpc('set_real_name', { p_student: el.dataset.id, p_name: $('#rn-' + el.dataset.id).value }); await refresh(); }, 'Name saved').catch(() => { });
 A.resetpin = el => act(async () => { const p = $('#rp-' + el.dataset.id).value.trim(); if (!/^[0-9]{4}$/.test(p)) throw new Error('bad_pin'); await rpc('reset_pin', { p_student: el.dataset.id, p_pin: p }); clear('rp-' + el.dataset.id); }, 'PIN updated').catch(() => { });
 
 async function removeFiles(paths) { const p = paths.filter(Boolean); if (p.length) await sb.storage.from(BUCKET).remove(p).catch(() => { }); }
@@ -784,6 +867,7 @@ async function doDelete(k) {
     if (type === 'giveup') { const f = S.focus; S.focus = null; store.set('skate-focus', null); render(); if (f) rpc('cancel_focus', { p_id: f.id }).catch(() => { }); toast('Session stopped'); return; }
     if (type === 'logout') { await sb.auth.signOut(); S.me = null; S.view = { name: 'home' }; await resolveSession(); return; }
     if (type === 'res') { const r = S.resources.find(x => x.id === id); await q(sb.from('resources').delete().eq('id', id)); await removeFiles([r?.storage_path]); toast('Resource removed'); }
+    if (type === 'log') { await q(sb.from('student_log').delete().eq('id', id)); toast('Entry deleted'); }
     if (type === 'quiz') { await q(sb.from('quizzes').delete().eq('id', id)); toast('Quiz deleted'); }
     if (type === 'theme') { if (S.customDraft?.id === id) S.customDraft = null; await q(sb.from('themes').delete().eq('id', id)); toast('Theme deleted'); }
     if (type === 'kick') { await q(sb.from('enrolments').delete().eq('student_id', id).eq('class_id', extra)); toast('Skater removed from class'); }
@@ -792,6 +876,46 @@ async function doDelete(k) {
   } catch (e) { toast(msg(e)); }
   refresh();
 }
+
+
+/* log actions */
+A.logcat = el => { S.ui.logCat = el.dataset.cat; render(); };
+A.logall = el => { document.querySelectorAll('[data-logstu]').forEach(cb => cb.checked = el.dataset.on === '1'); };
+A.logfilter = el => { S.ui.logStudent = el.dataset.stu; S.ui.logFilterCat = ''; dropIds('lgf-'); render(); };
+F.logadd = async f => {
+  const cid = f.dataset.id, ids = [...document.querySelectorAll('[data-logstu]:checked')].map(cb => cb.dataset.logstu);
+  if (!ids.length) { toast('Tick at least one student.'); return; }
+  const cat = S.ui.logCat || 'positive', note = $('#lg-note-' + cid).value.trim(), date = $('#lg-date-' + cid).value || todayStr(), coins = parseInt($('#lg-coins-' + cid).value, 10) || 0;
+  S.ui.busy = true; render();
+  try {
+    await q(sb.from('student_log').insert(ids.map(id => ({ class_id: cid, student_id: id, category: cat, note, logged_on: date, coins }))));
+    if (coins) for (const id of ids) await rpc('award_coins', { p_student: id, p_amount: coins, p_reason: `${catOf(cat)[2]}${note ? ': ' + note : ''}` });
+    document.querySelectorAll('[data-logstu]').forEach(cb => cb.checked = false); clear('lg-note-' + cid); const ci = $('#lg-coins-' + cid); if (ci) ci.value = '0';
+    toast(`Logged for ${ids.length} student${ids.length > 1 ? 's' : ''}`);
+  } catch (e) { toast(msg(e)); }
+  S.ui.busy = false; refresh();
+};
+A.logcsv = el => {
+  const cid = el.dataset.id, c = S.classes.find(x => x.id === cid), byId = Object.fromEntries(S.students.map(x => [x.id, x]));
+  const rows = [['Date', 'Student', 'Real name', 'Skater name', 'Type', 'Note', 'Coins']].concat(S.notes.filter(n => n.class_id === cid).map(n => { const s = byId[n.student_id]; return [n.logged_on, tname(s), s?.real_name || '', s?.nickname || '', catOf(n.category)[2], n.note, n.coins]; }));
+  const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = `${(c?.name || 'class').replace(/[^\w-]+/g, '_')}-log-${todayStr()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+};
+
+/* to-do actions */
+F.todoadd = async () => {
+  const text = $('#td-text').value.trim(), due = $('#td-due').value || null; if (!text) return;
+  const row = S.role === 'teacher' ? { teacher_user: S.uid, text, due } : { student_id: S.me.id, text, due };
+  try { await q(sb.from('todos').insert(row)); clear('td-text', 'td-due'); } catch (e) { toast(msg(e)); }
+  refresh();
+};
+A.todotoggle = async el => {
+  const x = S.todos.find(y => y.id === el.dataset.id); if (!x) return;
+  x.done = !x.done; render();
+  try { await q(sb.from('todos').update({ done: x.done }).eq('id', x.id)); } catch (e) { toast(msg(e)); refresh(); }
+};
+A.tododel = async el => { S.todos = S.todos.filter(y => y.id !== el.dataset.id); render(); try { await q(sb.from('todos').delete().eq('id', el.dataset.id)); } catch (e) { toast(msg(e)); refresh(); } };
+A.todoclear = async () => { const ids = S.todos.filter(y => y.done).map(y => y.id); S.todos = S.todos.filter(y => !y.done); render(); try { if (ids.length) await q(sb.from('todos').delete().in('id', ids)); } catch (e) { toast(msg(e)); refresh(); } };
 
 /* student actions */
 F.joinmore = () => act(async () => { await rpc('join_class', { p_code: $('#jm-code').value.trim().toUpperCase() }); clear('jm-code'); await refresh(); }, 'Joined!').catch(() => { });

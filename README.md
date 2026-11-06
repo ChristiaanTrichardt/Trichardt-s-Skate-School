@@ -15,7 +15,7 @@ Setup takes about 20 minutes, once.
 
 1. Go to **supabase.com** → sign up → **New project**. Pick any name, set a database password (save it somewhere), and choose the **Sydney** region.
 2. When the project is ready, open **SQL Editor** (left sidebar) → **New query**.
-3. Open `supabase/setup.sql` from this folder, copy everything, paste it in, and press **Run**. You should see "Success".
+3. Open `setup.sql` from this folder, copy everything, paste it in, and press **Run**. You should see "Success".
 4. Go to **Authentication → Sign In / Providers** (may be called **Providers**) and turn on **Allow anonymous sign-ins**. Save. *(This is how students log in without an email.)*
 5. Click the **Connect** button at the top of your project dashboard, pick any framework tab, and copy two things from the lines it shows:
    - **Project URL**: the `https://abcdxyz.supabase.co` part of the `..._SUPABASE_URL=` line
@@ -25,7 +25,7 @@ Setup takes about 20 minutes, once.
 
 ## 2. Add your keys to the website
 
-Open `js/config.js` and paste the two values in place of the placeholders:
+Open `config.js` and paste the two values in place of the placeholders:
 
 ```js
 window.SKATE_CONFIG = {
@@ -89,7 +89,7 @@ This makes the email confirmation link bring you back to your site.
 - **Coin rules:** go to **Settings** on the site. You can change the welcome bonus, coins per focus minute, and the daily limits.
 - **Shop prices and names:** in Supabase, go to **Table Editor → shop_items** and edit the cells.
 - **Your own themes:** use the **Themes** page on the site.
-- **Built-in themes:** edit the `THEMES` list at the top of `js/art.js`, then upload the changed file to GitHub.
+- **Built-in themes:** edit the `THEMES` list at the top of `art.js`, then upload the changed file to GitHub.
 - **Give or take coins:** use the class's **Skaters** tab.
 
 ## Good to know

@@ -481,6 +481,21 @@ begin
     limit 10;
 end $$;
 
+create or replace function public.class_crew(p_class uuid)
+returns table (nickname text, color text, equipped jsonb, lifetime int, is_me boolean)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.is_teacher() or public.is_enrolled(p_class)) then return; end if;
+  return query
+    select s.nickname, s.color, s.equipped, s.earned, (s.user_id = auth.uid())
+    from public.students s join public.enrolments e on e.student_id = s.id
+    where e.class_id = p_class
+    order by s.earned desc, s.created_at
+    limit 60;
+end $$;
+revoke execute on function public.class_crew(uuid) from public, anon;
+grant execute on function public.class_crew(uuid) to authenticated;
+
 -- ---------------------------------------------------------------------
 --  Teacher actions
 -- ---------------------------------------------------------------------
@@ -552,6 +567,90 @@ create policy "teacher updates" on storage.objects for update to authenticated
 drop policy if exists "teacher deletes" on storage.objects;
 create policy "teacher deletes" on storage.objects for delete to authenticated
   using (bucket_id = 'resources' and public.is_teacher());
+
+-- ---------------------------------------------------------------------
+--  Study hours, teacher log, to-do lists (also shipped as update-2.sql)
+-- ---------------------------------------------------------------------
+
+-- Bowl settings: hours of focus needed, counted this week or all time
+alter table public.settings add column if not exists bowl_hours numeric not null default 1;
+alter table public.settings add column if not exists bowl_period text not null default 'week';
+
+-- Real names, visible to the teacher (students choose their own skater names)
+alter table public.students add column if not exists real_name text not null default '';
+grant select (real_name) on public.students to authenticated;
+
+-- Start of this week (Monday) in the classroom's time zone
+create or replace function public.week_start() returns timestamptz
+language sql stable security definer set search_path = public as $$
+  select (date_trunc('week', now() at time zone tz) at time zone tz)
+  from (select coalesce((select timezone from public.settings where id = 1), 'UTC') as tz) t;
+$$;
+
+-- Everyone in a class, with study minutes (all time and this week)
+drop function if exists public.class_crew(uuid);
+create function public.class_crew(p_class uuid)
+returns table (nickname text, color text, equipped jsonb, lifetime int, focus_min int, week_min int, is_me boolean)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.is_teacher() or public.is_enrolled(p_class)) then return; end if;
+  return query
+    select s.nickname, s.color, s.equipped, s.earned, s.focus_min,
+           coalesce((select sum(f.minutes)::int from public.focus_sessions f
+                     where f.student_id = s.id and f.completed_at >= public.week_start()), 0),
+           (s.user_id = auth.uid())
+    from public.students s join public.enrolments e on e.student_id = s.id
+    where e.class_id = p_class
+    order by s.focus_min desc, s.created_at
+    limit 80;
+end $$;
+
+-- Teacher sets a student's real name
+create or replace function public.set_real_name(p_student uuid, p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_teacher() then raise exception 'not_teacher'; end if;
+  update public.students set real_name = left(btrim(coalesce(p_name, '')), 60) where id = p_student;
+end $$;
+
+-- Teacher's log of behaviour, homework and notes (students can't see it)
+create table if not exists public.student_log (
+  id bigint generated always as identity primary key,
+  class_id uuid not null references public.classes(id) on delete cascade,
+  student_id uuid not null references public.students(id) on delete cascade,
+  category text not null check (category in ('positive','concern','hw_done','hw_missing','note')),
+  note text not null default '',
+  coins int not null default 0,
+  logged_on date not null default current_date,
+  created_at timestamptz not null default now()
+);
+create index if not exists student_log_class_idx on public.student_log(class_id, logged_on desc);
+alter table public.student_log enable row level security;
+drop policy if exists "teacher" on public.student_log;
+create policy "teacher" on public.student_log for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
+
+-- Personal to-do lists (each student and the teacher see only their own)
+create table if not exists public.todos (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  teacher_user uuid references auth.users(id) on delete cascade,
+  text text not null check (length(text) between 1 and 200),
+  due date,
+  done boolean not null default false,
+  created_at timestamptz not null default now(),
+  check ((student_id is null) <> (teacher_user is null))
+);
+create index if not exists todos_student_idx on public.todos(student_id);
+alter table public.todos enable row level security;
+drop policy if exists "own" on public.todos;
+create policy "own" on public.todos for all to authenticated
+  using ((student_id is not null and student_id = public.my_student_id())
+      or (teacher_user is not null and teacher_user = auth.uid() and public.is_teacher()))
+  with check ((student_id is not null and student_id = public.my_student_id())
+      or (teacher_user is not null and teacher_user = auth.uid() and public.is_teacher()));
+
+revoke execute on all functions in schema public from public, anon;
+grant execute on all functions in schema public to authenticated;
 
 -- =====================================================================
 --  LAST STEP (after you've created your teacher login on the website):
