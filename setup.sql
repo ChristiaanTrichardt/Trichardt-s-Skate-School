@@ -842,6 +842,62 @@ end $$;
 revoke execute on all functions in schema public from public, anon;
 grant execute on all functions in schema public to authenticated;
 
+-- ---------------------------------------------------------------------
+--  Whiteboard, surf world (also shipped as update-4.sql)
+-- ---------------------------------------------------------------------
+
+-- Which world each class lives in ('skate' or 'surf'), and the world for pages outside a class
+alter table public.classes add column if not exists world text not null default 'skate';
+alter table public.settings add column if not exists home_world text not null default 'skate';
+
+-- Shop items belong to a world ('skate', 'surf' or 'both')
+alter table public.shop_items add column if not exists world text not null default 'skate';
+update public.shop_items set world = 'both' where slot = 'character' or (slot, id) in (('pet','shark'),('plant','palm'),('plant','cactus'),('hat','headphones'),('eyes','shades'),('eyes','star'));
+
+insert into public.shop_items (slot, id, name, price, emoji, sort, world) values
+  ('hat','bucket','Bucket hat',30,null,20,'surf'), ('hat','visor','Sun visor',35,null,21,'surf'),
+  ('hat','straw','Straw hat',45,null,22,'surf'), ('hat','flowercrown','Flower crown',60,null,23,'surf'),
+  ('hat','surfhelmet','Big-wave helmet',120,null,24,'surf'),
+  ('eyes','mask','Snorkel mask',40,null,20,'surf'), ('eyes','heart','Heart sunnies',70,null,21,'surf'),
+  ('neck','lei','Flower lei',30,null,20,'surf'), ('neck','sharktooth','Shark-tooth necklace',55,null,21,'surf'),
+  ('neck','whistle','Lifeguard whistle',80,null,22,'surf'),
+  ('pet','crab','Crab',50,'🦀',20,'surf'), ('pet','turtle','Sea turtle',80,'🐢',21,'surf'),
+  ('pet','seal','Seal',110,'🦭',22,'surf'), ('pet','dolphin','Dolphin',150,'🐬',23,'surf'),
+  ('pet','octopus','Octopus',180,'🐙',24,'surf'), ('pet','parrot','Parrot',200,'🦜',25,'surf'),
+  ('pet','whale','Whale',400,'🐳',26,'surf'),
+  ('plant','shell','Seashell',20,'🐚',20,'surf'), ('plant','coconut','Coconut',30,'🥥',21,'surf'),
+  ('plant','hibiscus','Hibiscus',45,'🌺',22,'surf'), ('plant','coral','Coral',70,'🪸',23,'surf'),
+  ('gear','buoy','Ring buoy',15,'🛟',20,'surf'), ('gear','volleyball','Volleyball',30,'🏐',21,'surf'),
+  ('gear','snorkel','Snorkel set',40,'🤿',22,'surf'), ('gear','kite','Kite',50,'🪁',23,'surf'),
+  ('gear','rod','Fishing rod',60,'🎣',24,'surf'), ('gear','watermelon','Watermelon',25,'🍉',25,'surf'),
+  ('gear','camera','Camera',80,'📸',26,'surf'), ('gear','canoe','Canoe',150,'🛶',27,'surf')
+on conflict (slot, id) do nothing;
+
+-- One live whiteboard per class
+create table if not exists public.boards (
+  class_id uuid primary key references public.classes(id) on delete cascade,
+  text text not null default '',
+  strokes jsonb not null default '[]',
+  timer_end timestamptz,
+  timer_total int not null default 0,
+  timer_left int,
+  visible boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+alter table public.boards enable row level security;
+drop policy if exists "read" on public.boards;
+create policy "read" on public.boards for select to authenticated using (public.is_teacher() or public.is_enrolled(class_id));
+drop policy if exists "teacher" on public.boards;
+create policy "teacher" on public.boards for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
+
+-- Send whiteboard changes to students' screens instantly
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'boards') then
+    alter publication supabase_realtime add table public.boards;
+  end if;
+end $$;
+
 -- =====================================================================
 --  LAST STEP (after you've created your teacher login on the website):
 --  replace the email below with yours and run just this line:
