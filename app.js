@@ -161,7 +161,7 @@ function render() {
   try { WORLD = S.loading || S.role === 'setup' ? 'skate' : currentWorld(); } catch { WORLD = 'skate'; }
   const { html, theme, font } = view();
   document.body.className = 'world-' + WORLD;
-  app.setAttribute('style', themeVars(theme) + `;--f-display:${fontCss(font || (WORLD === 'surf' ? 'Shrikhand' : site().heading_font))}`);
+  app.setAttribute('style', themeVars(theme) + `;--f-display:${fontCss(font || WORLD_FONT[WORLD] || site().heading_font)}`);
   app.innerHTML = html;
   for (const [id, s] of Object.entries(vals)) { const el = document.getElementById(id); if (!el) continue; if ('c' in s) el.checked = s.c; else el.value = s.v; }
   for (const [id, o] of Object.entries(opens)) { const d = document.getElementById(id); if (d) d.open = o; }
@@ -171,7 +171,8 @@ function render() {
   paintBoards();
 }
 function clear(...ids) { ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); }
-function go(v) { S.view = v; S.ui.armed = null; S.celebrate = null; render(); window.scrollTo(0, 0); }
+function go(v) {
+  if (Q.on && v.name !== 'board') { const cid = Q.cid; quietStop(); if (cid) { S.boards[cid] = { ...boardOf(cid), quiet_on: false, quiet_level: 0, quiet_animals: Q.count, quiet_secs: Q.secs }; q(sb.from('boards').upsert({ ...boardOf(cid), class_id: cid, updated_at: new Date().toISOString() })).catch(() => { }); } } S.view = v; S.ui.armed = null; S.celebrate = null; render(); window.scrollTo(0, 0); }
 
 function view() {
   const home = siteTheme();
@@ -192,6 +193,8 @@ function view() {
 }
 
 const BOARD_SVG = `<svg viewBox="0 0 64 40" aria-hidden="true"><rect x="3" y="8" width="58" height="14" rx="7" fill="#FF2E88" stroke="#F6F6F1" stroke-width="3"/><circle cx="16" cy="30" r="6" fill="#FFE14D" stroke="#F6F6F1" stroke-width="3"/><circle cx="48" cy="30" r="6" fill="#FFE14D" stroke="#F6F6F1" stroke-width="3"/></svg>`;
+const GOLF_SVG = `<svg viewBox="0 0 64 40" aria-hidden="true"><line x1="20" y1="36" x2="20" y2="4" stroke="#fff" stroke-width="3"/><path d="M21 4L46 11L21 18Z" fill="#E0262C" stroke="#fff" stroke-width="2"/><ellipse cx="28" cy="36" rx="20" ry="3.5" fill="#7FB069"/><circle cx="44" cy="33" r="4" fill="#fff"/></svg>`;
+const BIKE_SVG = `<svg viewBox="0 0 64 40" aria-hidden="true"><g fill="none" stroke="#fff" stroke-width="3"><circle cx="14" cy="26" r="10"/><circle cx="50" cy="26" r="10"/><path d="M14 26L26 10H42L50 26M26 10L32 26H14M32 26L42 10M24 6H30M42 10L40 4H46"/></g></svg>`;
 const SURF_SVG = `<svg viewBox="0 0 64 40" aria-hidden="true"><path d="M4 20Q20 6 58 16Q62 20 58 24Q20 34 4 20Z" fill="#FFD166" stroke="#fff" stroke-width="3"/><path d="M10 20H54" stroke="#FF7A59" stroke-width="4"/></svg>`;
 function topbar() {
   const st = site(), v = S.view.name;
@@ -203,7 +206,7 @@ function topbar() {
   if (S.focus && S.role === 'student') { const rem = remaining(); right += `<button class="minitimer" data-act="nav" data-to="focus" id="minitimer" aria-label="Focus session running">⏱ ${fmtT(rem)}</button>`; }
   if (S.role === 'student' && S.me) right += `<span class="coins" title="Your coins"><span class="coin"></span>${balance(S.me)}</span>`;
   if (S.role === 'teacher' || S.role === 'pending') right += `<button class="topbtn" data-act="signout">Sign out</button>`;
-  return `<header class="top"><div class="wrap"><button class="brand" data-act="nav" data-to="home">${WORLD === 'surf' ? SURF_SVG : BOARD_SVG}<span>${esc(st.site_name)}</span></button>
+  return `<header class="top"><div class="wrap"><button class="brand" data-act="nav" data-to="home">${({ surf: SURF_SVG, golf: GOLF_SVG, cycle: BIKE_SVG })[WORLD] || BOARD_SVG}<span>${esc(st.site_name)}</span></button>
   ${navs.length ? `<nav class="nav" aria-label="Main">${navs.map(([k, l]) => `<button data-act="nav" data-to="${k}" ${cur(k)}>${l}</button>`).join('')}</nav>` : ''}${right}</div></header>`;
 }
 function banner(t, { eyebrow = '', title = '', sub = '', back = null, code = null } = {}) {
@@ -213,7 +216,7 @@ function banner(t, { eyebrow = '', title = '', sub = '', back = null, code = nul
   ${code ? `<span class="codechip"><small>Join code</small>${esc(code)}</span>` : ''}</div></section>`;
 }
 let WORLD = 'skate';
-function siteTheme() { const t = THEMES.find(x => x.id === site().home_theme) || S.themes.find(x => x.id === site().home_theme); return t && (t.world === WORLD || !THEMES.includes(t)) ? t : themeById(WORLD === 'surf' ? 'reef' : 'griptape'); }
+function siteTheme() { const t = THEMES.find(x => x.id === site().home_theme) || S.themes.find(x => x.id === site().home_theme); return t && (t.world === WORLD || !THEMES.includes(t)) ? t : themeById(WORLD_DEFAULT_THEME[WORLD] || 'griptape'); }
 const W = () => WORDS[WORLD];
 function currentWorld() {
   const v = S.view; let c = null;
@@ -223,9 +226,9 @@ function currentWorld() {
   else if (v.name === 'quizedit' && S.quizDraft) c = S.classes.find(x => x.id === S.quizDraft.class_id);
   if (c) return worldOf(c);
   if (S.role === 'student' && S.me) { const mc = myClasses(); if (mc.length) return worldOf(mc[0]); }
-  return site().home_world === 'surf' ? 'surf' : 'skate';
+  return WORLD_DEFAULT_THEME[site().home_world] ? site().home_world : 'skate';
 }
-const classFont = c => (c && c.heading_font) || (worldOf(c) === 'surf' ? 'Shrikhand' : site().heading_font);
+const classFont = c => (c && c.heading_font) || WORLD_FONT[worldOf(c)] || site().heading_font;
 function fontPicker(sel, act, extra = '', inherit = false) {
   return `<div class="fontpick">${inherit ? `<button class="fp" aria-pressed="${!sel}" data-act="${act}" data-font="" ${extra}><span class="fp-s" style="font-family:${fontCss(site().heading_font)}">Aa</span><span class="small">Same as site</span></button>` : ''}${FONTS.map(f => `<button class="fp" aria-pressed="${sel === f.id}" data-act="${act}" data-font="${esc(f.id)}" ${extra}><span class="fp-s" style="font-family:${fontCss(f.id)}">Skate Skool</span><span class="small">${esc(f.name)}</span></button>`).join('')}</div>`;
 }
@@ -269,6 +272,9 @@ function pendingView() {
 }
 function den(eq, color, nickname) {
   const pet = item('pet', eq.pet), plant = item('plant', eq.plant), gear = item('gear', eq.gear);
+  const inner = `${plant ? `<span class="plant">${plant.emoji}</span>` : ''}${charSVG(eq, color, 'bob', 'Your character')}${gear ? `<span class="gear">${gear.emoji}</span>` : ''}${pet ? `<span class="pet bob">${pet.emoji}</span>` : ''}`;
+  if (WORLD === 'golf') return `<div class="den club" role="img" aria-label="Your character's clubhouse"><span class="tag" aria-hidden="true">${esc(nickname || 'golf club')}</span><div class="window" aria-hidden="true"></div><div class="shelf"><span>🏆</span><span>🥇</span><span>⛳</span></div><div class="floor"></div><div class="mat"></div>${inner}</div>`;
+  if (WORLD === 'cycle') return `<div class="den bus" role="img" aria-label="Your character's team bus"><span class="tag" aria-hidden="true">${esc(nickname || 'team bus')}</span><div class="window" aria-hidden="true"></div><div class="wallbike" aria-hidden="true">🚲</div><div class="jersey" aria-hidden="true"></div><div class="floor"></div><div class="mat"></div>${inner}</div>`;
   if (WORLD === 'surf') return `<div class="den hut" role="img" aria-label="Your character's beach hut"><span class="tag" aria-hidden="true">${esc(nickname || 'surf skool')}</span><div class="window" aria-hidden="true"></div><div class="board1"></div><div class="board2"></div><div class="floor"></div><div class="mat"></div>
   ${plant ? `<span class="plant">${plant.emoji}</span>` : ''}${charSVG(eq, color, 'bob', 'Your character')}${gear ? `<span class="gear">${gear.emoji}</span>` : ''}${pet ? `<span class="pet bob">${pet.emoji}</span>` : ''}</div>`;
   return `<div class="den" role="img" aria-label="Your character's hangout"><span class="tag" aria-hidden="true">${esc(nickname || 'skate skool')}</span><div class="poster" aria-hidden="true">⚡</div><div class="ramp"></div><div class="floor"></div><div class="crate"></div>
@@ -484,9 +490,10 @@ function trickAnims(tricks, D, begin, cy, gravity, world = 'skate') {
 }
 
 function bowlScene(crew, t, title, opts = {}) {
-  const u = 'bw' + (++BOWL_SEQ) + '-', park = PARKS.find(p => p.id === opts.park) ? opts.park : 'brickyard', surf = (opts.world || 'skate') === 'surf';
-  const A = surf ? surfArt(SURF_ID[park], t, u, title || 'Skate Skool') : parkArt(park, t, u, title || 'Skate Skool');
-  const D8 = surf ? surfDecor(opts.decor || new Set(), t, title || 'Skate Skool', u) : decorArt(opts.decor || new Set(), t, title || 'Skate Skool', u);
+  const u = 'bw' + (++BOWL_SEQ) + '-', park = PARKS.find(p => p.id === opts.park) ? opts.park : 'brickyard', world = WORLD_DEFAULT_THEME[opts.world] ? opts.world : 'skate', surf = world === 'surf', outdoor = world !== 'skate';
+  const decorOn = opts.decor || new Set(), ttl = title || 'Skate Skool';
+  const A = world === 'surf' ? surfArt(SURF_ID[park], t, u, ttl) : world === 'golf' ? golfArt(park, t, u) : world === 'cycle' ? cycleArt(park, t, u) : parkArt(park, t, u, ttl);
+  const D8 = world === 'surf' ? surfDecor(decorOn, t, ttl, u) : world === 'golf' ? golfDecor(decorOn, t, ttl, u) : world === 'cycle' ? cycleDecor(decorOn, t, ttl, u) : decorArt(decorOn, t, ttl, u);
   const need = Math.max(0, Number(site().bowl_hours) || 0) * 60;
   crew = (crew || []).slice().sort((a, b) => studyMin(b) - studyMin(a));
   const n = crew.length, qualified = crew.filter(c => studyMin(c) >= need && (need > 0 || studyMin(c) > 0));
@@ -509,32 +516,32 @@ function bowlScene(crew, t, title, opts = {}) {
   };
   const riderSVG = riders.map((c, i) => {
     const eq = c.equipped || {}, h = 74, w = h * 140 / 168, D = 5.4 + (i % 4) * .9 + Math.floor(i / 4) * .45, pet = item('pet', eq.pet);
-    const begin = -i * 1.37, cy = -(h / 2) - 9, tr = trickAnims(c.tricks, D, begin, cy, A.gravity, surf ? 'surf' : 'skate') || {};
-    const board = `<g transform="translate(0 -7)"><g>${tr.board || ''}${surf ? surfboardSVG(['#22D3EE', '#FF7A59', '#FFE14D', '#34D399', '#FF8FB1'][i % 5]) : '<rect x="-34" y="-4" width="68" height="8" rx="4" class="bw-deck"/><circle cx="-20" cy="7" r="4.5" class="bw-wheel"/><circle cx="20" cy="7" r="4.5" class="bw-wheel"/>'}</g></g>`;
+    const begin = -i * 1.37, cy = -(h / 2) - 9, tr = trickAnims(c.tricks, D, begin, cy, A.gravity, world) || {};
+    const board = `<g transform="translate(0 -7)"><g>${tr.board || ''}${surf ? surfboardSVG(['#22D3EE', '#FF7A59', '#FFE14D', '#34D399', '#FF8FB1'][i % 5]) : world === 'golf' ? buggySVG(['#1F6B45', '#C62828', '#13233F', '#C9A227'][i % 4]) : world === 'cycle' ? bikeSVG(['#FFC800', '#E0262C', '#2B59FF', '#22B35E', '#FF3E8A'][i % 5]) : '<rect x="-34" y="-4" width="68" height="8" rx="4" class="bw-deck"/><circle cx="-20" cy="7" r="4.5" class="bw-wheel"/><circle cx="20" cy="7" r="4.5" class="bw-wheel"/>'}</g></g>`;
     const body = `${placeChar(charSVG(eq, c.color, '', c.nickname), -w / 2, -h - 9, w.toFixed(1), h)}${pet ? `<text class="bw-emo" x="${(w / 2 - 6).toFixed(1)}" y="-40" font-size="24">${pet.emoji}</text>` : ''}`;
     const inner = `<g>${tr.jump || ''}<g>${tr.rot || ''}<g transform="translate(0 ${cy})"><g>${tr.spin || ''}<g transform="translate(0 ${-cy})">${body}${board}</g></g></g></g>
       ${label(0, -h - 31, c.nickname, c.is_me)}${c.is_me ? youMark(0, -h - 43) : ''}${tr.labels || ''}</g>`;
     if (REDUCED) { const xs = 300 + (i % 4) * 130 + Math.floor(i / 4) * 60; return `<g transform="translate(${xs},427)"><title>${esc(c.nickname)}</title>${inner}</g>`; }
-    return `<g><title>${esc(c.nickname)}${(c.tricks || []).length ? ' · tricks: ' + esc(c.tricks.map(k => trickName(k, surf ? 'surf' : 'skate')).join(', ')) : ''}</title>${inner}<animateMotion dur="${D}s" begin="${begin.toFixed(2)}s" repeatCount="indefinite" path="${RIDE_PATH}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
+    return `<g><title>${esc(c.nickname)}${(c.tricks || []).length ? ' · tricks: ' + esc(c.tricks.map(k => trickName(k, world)).join(', ')) : ''}</title>${inner}<animateMotion dur="${D}s" begin="${begin.toFixed(2)}s" repeatCount="indefinite" path="${RIDE_PATH}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
   }).join('');
   const glow = A.glow ? `filter="url(#${u}glow)"` : '';
-  const svg = `<svg viewBox="0 0 ${BW} ${BH}" role="img" aria-label="${esc(parkName(park, surf ? 'surf' : 'skate'))}${opts.thumb ? '' : `: ${n} skater${n === 1 ? '' : 's'}`}">
+  const svg = `<svg viewBox="0 0 ${BW} ${BH}" role="img" aria-label="${esc(parkName(park, world))}${opts.thumb ? '' : `: ${n} skater${n === 1 ? '' : 's'}`}">
    <defs><linearGradient id="${u}pool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${A.pool[0]}"/><stop offset="1" stop-color="${A.pool[1]}"/></linearGradient><clipPath id="${u}pclip"><path d="${EDGE}Z"/></clipPath>${A.defs}${D8.defs}</defs>
-   ${A.back}${surf ? D8.sky + D8.back : ''}
-   ${surf ? `<rect y="${DECK - 12}" width="${BW}" height="16" fill="${A.sand}"/>` : `<rect y="${DECK - 12}" width="${BW}" height="16" fill="${A.deck}" stroke="#121212" stroke-width="3"/>`}
+   ${A.back}${outdoor ? D8.sky + D8.back : ''}
+   ${outdoor ? `<rect y="${DECK - 12}" width="${BW}" height="16" fill="${A.sand}"/>` : `<rect y="${DECK - 12}" width="${BW}" height="16" fill="${A.deck}" stroke="#121212" stroke-width="3"/>`}
    ${standRow(rowB, DECK - 8, 54, 0)}${standRow(rowA, DECK, 66, 8)}
-   ${surf ? waveLayers(A, u) + D8.wave : `<path d="M0 ${LIP}H${BW}V${BH}H0Z" fill="${A.ground}"/>${A.front}
+   ${outdoor ? (surf ? waveLayers(A, u) : world === 'golf' ? golfLayers(A, u, decorOn) : roadLayers(A, u)) + D8.wave : `<path d="M0 ${LIP}H${BW}V${BH}H0Z" fill="${A.ground}"/>${A.front}
    <path d="${EDGE}Z" fill="url(#${u}pool)"/>${A.inPool}${D8.under}
    <path d="${EDGE}" fill="none" stroke="${A.edge}" stroke-width="4" ${glow}/>${D8.rim}
    <path d="M0 ${LIP}H108M892 ${LIP}H${BW}" stroke="${A.coping}" stroke-width="10" stroke-linecap="round" ${glow}/><circle cx="108" cy="${LIP}" r="6" fill="${A.coping}" stroke="#121212" stroke-width="3"/><circle cx="892" cy="${LIP}" r="6" fill="${A.coping}" stroke="#121212" stroke-width="3"/>
    ${D8.over}`}${tags.join('')}
-   ${n || opts.thumb ? '' : `<text x="500" y="340" text-anchor="middle" class="bw-empty">No ${surf ? 'surfers' : 'skaters'} yet. Share the join code!</text>`}
+   ${n || opts.thumb ? '' : `<text x="500" y="340" text-anchor="middle" class="bw-empty">No ${WORDS[world].riders} yet. Share the join code!</text>`}
    ${riderSVG}
    ${extra ? `<text x="${BW - 16}" y="${DECK + 30}" text-anchor="end" class="bw-more">+${extra} more</text>` : ''}
   </svg>`;
   if (opts.thumb) return svg;
-  const wd = WORDS[surf ? 'surf' : 'skate'];
-  return `<figure class="bowl"><div class="bowl-scroll">${svg}</div><figcaption class="small muted"><b>${esc(parkName(park, surf ? 'surf' : 'skate'))}.</b> Study ${esc(String(site().bowl_hours))} ${Number(site().bowl_hours) === 1 ? 'hour' : 'hours'} ${periodWord()} in focus sessions to ${wd.ride}. ${nRide ? `${nRide} ${nRide === 1 ? wd.rider + ' is' : wd.riders + ' are'} riding${qualified.length > nRide ? ` (${qualified.length} unlocked)` : ''}.` : 'Nobody has unlocked it yet.'} Riders pull the tricks your teacher has unlocked for them.</figcaption></figure>`;
+  const wd = WORDS[world];
+  return `<figure class="bowl"><div class="bowl-scroll">${svg}</div><figcaption class="small muted"><b>${esc(parkName(park, world))}.</b> Study ${esc(String(site().bowl_hours))} ${Number(site().bowl_hours) === 1 ? 'hour' : 'hours'} ${periodWord()} in focus sessions to ${wd.ride}. ${nRide ? `${nRide} ${nRide === 1 ? wd.rider + ' is' : wd.riders + ' are'} ${({ golf: 'playing', cycle: 'racing' })[world] || 'riding'}${qualified.length > nRide ? ` (${qualified.length} unlocked)` : ''}.` : 'Nobody has unlocked it yet.'} Riders pull the tricks your teacher has unlocked for them.</figcaption></figure>`;
 }
 
 /* ---------------- the surf wave (surf world) ---------------- */
@@ -634,12 +641,182 @@ function waveLayers(A, u) {
 }
 function surfboardSVG(c) { return `<path d="M-44 0Q-12 -9 40 -3Q48 0 40 3Q-12 9 -44 0Z" fill="${c}" stroke="#121212" stroke-width="2.5"/><path d="M-30 0H30" stroke="#fff" stroke-width="2.5" opacity=".8"/>`; }
 
+/* ---------------- golf course and road cycling scenes ---------------- */
+const roundTree = (x, y, s, c = '#3F8F4A') => `<rect x="${x - 3 * s}" y="${y - 22 * s}" width="${6 * s}" height="${22 * s}" fill="#6B4423"/><circle cx="${x}" cy="${y - 34 * s}" r="${20 * s}" fill="${c}"/><circle cx="${x - 12 * s}" cy="${y - 26 * s}" r="${13 * s}" fill="${c}"/><circle cx="${x + 13 * s}" cy="${y - 27 * s}" r="${14 * s}" fill="${c}"/>`;
+const cypress = (x, y, s) => `<ellipse cx="${x}" cy="${y - 34 * s}" rx="${8 * s}" ry="${34 * s}" fill="#2F5233"/>`;
+const mountains = (snow = true, c1 = '#7488AE', c2 = '#5B6F96') => `<path d="M60 175L240 50L420 175ZM330 175L560 26L790 175ZM650 175L850 66L1050 175Z" fill="${c1}"/><path d="M180 175L300 96L430 175ZM700 175L800 110L920 175Z" fill="${c2}"/>${snow ? '<path d="M206 68L240 50L274 68L258 80L240 70L222 80ZM518 52L560 26L602 52L584 64L560 54L536 64ZM816 84L850 66L884 84L868 94L850 86L832 94Z" fill="#fff"/>' : ''}`;
+function cityline(seed, maxH, col, lit) { const r = seeded(seed); let o = '', x = 0; while (x < BW) { const w = 50 + r() * 60, h = 50 + r() * maxH, top = 178 - h; o += `<rect x="${x.toFixed(0)}" y="${top.toFixed(0)}" width="${w.toFixed(0)}" height="${(h + 40).toFixed(0)}" fill="${col}"/>`; if (lit) for (let wy = top + 10; wy < 168; wy += 16) for (let wx = x + 8; wx < x + w - 10; wx += 14) if (r() > .5) o += `<rect x="${wx.toFixed(0)}" y="${wy.toFixed(0)}" width="6" height="8" fill="${lit}" opacity=".85"/>`; x += w + 6; } return o; }
+function golfArt(id, t, u) {
+  const sky = (...c) => `<linearGradient id="${u}sky" x1="0" y1="0" x2="0" y2="1">${c.map((x, i) => `<stop offset="${(i / (c.length - 1)).toFixed(2)}" stop-color="${x}"/>`).join('')}</linearGradient>`;
+  const P = { sand: '#7FB069', rough: ['#4E9A47', '#2F6B33'], fairway: '#8FD06F', green: '#A6E37F', bunker: '#EBD9A6', water: '#3FA7D6', pond: null, defs: '', back: '', gravity: 1, glow: false, pool: ['#fff', '#fff'] };
+  if (id === 'warehouse') {
+    P.defs = sky('#26303D', '#3A4656');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${[150, 350, 550, 750, 950].map(x => `<path d="M${x - 200} ${LIP}Q${x} -60 ${x + 200} ${LIP}" fill="none" stroke="#56677D" stroke-width="4"/>`).join('')}
+     <rect y="60" width="${BW}" height="${LIP - 60}" fill="url(#${u}net)" opacity=".5"/>${[250, 500, 750].map((x, i) => `<g><circle cx="${x}" cy="120" r="34" fill="#fff"/><circle cx="${x}" cy="120" r="24" fill="#E0262C"/><circle cx="${x}" cy="120" r="12" fill="#fff"/><text x="${x}" y="70" text-anchor="middle" font-family="'Lato',sans-serif" font-weight="900" font-size="18" fill="#fff">${[150, 200, 250][i]}</text></g>`).join('')}
+     ${[200, 500, 800].map(x => `<circle cx="${x}" cy="30" r="8" fill="#FFF3B0"/><circle cx="${x}" cy="30" r="40" fill="#FFF3B0" opacity=".15"/>`).join('')}`;
+    P.defs += `<pattern id="${u}net" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M0 0L12 12M12 0L0 12" stroke="#9FB3C8" stroke-width="1"/></pattern>`;
+    Object.assign(P, { sand: '#3E9B4F', rough: ['#2E8B44', '#1F6B33'], fairway: '#4CC266', green: '#6BDB82' });
+  } else if (id === 'backyard') {
+    P.defs = sky('#B9C6CC', '#E8EEF0');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${cloud(300, 40, 1.1).replace('fill="#fff"', 'fill="#F4F6F7"')}<rect y="118" width="${BW}" height="50" fill="#5D7F8E"/>
+     <path d="M0 175Q120 132 250 160T520 150T800 158T1000 140V${LIP}H0Z" fill="#B7A57A"/>${Array.from({ length: 40 }, (_, i) => `<path d="M${i * 26 + 6} ${162 - (i % 3) * 6}l-4 -16M${i * 26 + 10} ${162 - (i % 3) * 6}l2 -14" stroke="#8C7B52" stroke-width="2"/>`).join('')}
+     <rect x="740" y="96" width="140" height="64" fill="#9A9A92" stroke="#4A4A44" stroke-width="3"/><path d="M730 98L810 64L890 98Z" fill="#4A4A44"/><rect x="790" y="126" width="22" height="34" fill="#4A4A44"/><text x="160" y="${LIP - 6}" font-size="28" class="bw-emo">🐑</text>`;
+    Object.assign(P, { sand: '#A9B77E', rough: ['#8FA35F', '#5F7A3A'], fairway: '#B5C97C', green: '#C4DA8E', bunker: '#E2CF97' });
+  } else if (id === 'beach') {
+    P.defs = sky('#FF9F43', '#FFE2A6');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="820" cy="60" r="36" fill="#FFF1C1"/><path d="M80 180L120 92H260L300 180ZM620 180L660 110H820L850 180Z" fill="#B5452B" stroke="#7A2A18" stroke-width="3"/>
+     <path d="M0 180Q300 160 600 176T1000 166V${LIP}H0Z" fill="#D9A066"/>${[[400, 1], [520, .8], [960, 1.1]].map(([x, s]) => `<text x="${x}" y="${LIP - 6}" font-size="${34 * s}" class="bw-emo">🌵</text>`).join('')}`;
+    Object.assign(P, { sand: '#D9A066', rough: ['#D9A066', '#B9804A'], fairway: '#7CC36A', green: '#9BDB7F', bunker: '#F2DDB0' });
+  } else if (id === 'rooftop') {
+    P.defs = sky('#0F1A3A', '#3A2A6B');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${stars(40, 9, 80, .7)}${cityline(17, 120, '#141B33', '#FFE07A')}<rect y="170" width="${BW}" height="4" fill="#9AA0A6"/>${Array.from({ length: 26 }, (_, i) => `<rect x="${i * 40}" y="170" width="4" height="${LIP - 170}" fill="#9AA0A6"/>`).join('')}`;
+    Object.assign(P, { sand: '#4CA764', rough: ['#2D7A45', '#1C4F2D'], fairway: '#5CC27A', green: '#7FE29A' });
+  } else if (id === 'outback') {
+    P.defs = sky('#FF9F43', '#FFE2A6');
+    const gum = (x, s) => `<path d="M${x} ${LIP}C${x - 4} ${LIP - 50 * s} ${x + 6} ${LIP - 80 * s} ${x - 10} ${LIP - 120 * s}" stroke="#EFE8DC" stroke-width="${9 * s}" fill="none" stroke-linecap="round"/><g fill="#7E8F4F">${[[-18, -130], [6, -138], [30, -126], [-34, -118]].map(([dx, dy]) => `<ellipse cx="${x + dx * s}" cy="${LIP + dy * s}" rx="${24 * s}" ry="${14 * s}"/>`).join('')}</g>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="850" cy="64" r="38" fill="#FFF1C1"/><path d="M0 175Q250 150 500 172T1000 160V${LIP}H0Z" fill="#D46A3A"/><path d="M360 182C372 126 410 114 560 112C700 112 740 128 752 182Z" fill="#B5452B" stroke="#7A2A18" stroke-width="3"/>${gum(130, 1.1)}${gum(905, .95)}<text x="650" y="${LIP - 4}" font-size="34" class="bw-emo">🦘</text>`;
+    Object.assign(P, { sand: '#C98468', rough: ['#B5532F', '#8E3E22'], fairway: '#86B85C', green: '#A3D378', bunker: '#E7C29A' });
+  } else if (id === 'forest') {
+    P.defs = sky('#9ED8FF', '#E8F7FF');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${mountains()}${Array.from({ length: 22 }, (_, i) => pine(i * 48 + (i % 2) * 16, LIP - 4 + (i % 3) * 4, .95 + (i % 3) * .2, i % 2 ? '#1F5E3A' : '#2D7A4A')).join('')}`;
+    Object.assign(P, { sand: '#5E9A3E', pond: [520, 330, 120, 34] });
+  } else if (id === 'neon') {
+    P.defs = sky('#0B0620', '#24104C') + `<filter id="${u}glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${stars(70, 19, 120)}${cityline(23, 90, '#140B2E', '')}<g filter="url(#${u}glow)"><rect x="380" y="40" width="240" height="60" rx="30" fill="none" stroke="#39FF88" stroke-width="5"/><text x="500" y="82" text-anchor="middle" font-family="'Bebas Neue',Impact,sans-serif" font-size="38" fill="#39FF88" letter-spacing="4">GLOW GOLF</text></g>`;
+    Object.assign(P, { sand: '#1F2A44', rough: ['#16213A', '#0B1224'], fairway: '#1B3B2E', green: '#225C3F', bunker: '#3A2F5C', glow: true });
+  } else if (id === 'moon') {
+    P.defs = sky('#03030A', '#14142A');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${stars(120, 5, 180, 1)}<circle cx="840" cy="70" r="38" fill="#2B6FD6"/><path d="M816 52q14-10 24 2t20 4M812 80q18 4 22 16" stroke="#3FA34D" stroke-width="9" fill="none" stroke-linecap="round"/><path d="M0 175Q120 150 240 168T520 160T780 170T1000 158V${LIP}H0Z" fill="#7A7A84"/><text x="120" y="150" font-size="40" class="bw-emo" transform="rotate(-30 140 140)">🚀</text>`;
+    Object.assign(P, { sand: '#A0A0A8', rough: ['#8A8A93', '#6E6E77'], fairway: '#A9A9B2', green: '#7FC98F', bunker: '#C9C9D0', gravity: 1.8 });
+  } else { // Local Links (start)
+    P.defs = sky('#8ED0FF', '#E6F6FF');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="880" cy="50" r="30" fill="#FFE14D"/>${cloud(320, 44, 1)}${cloud(620, 30, .8)}
+     ${Array.from({ length: 14 }, (_, i) => roundTree(i * 76 + 20, 186, .9 + (i % 3) * .15, i % 2 ? '#3F8F4A' : '#2F7A3E')).join('')}
+     <rect x="420" y="112" width="170" height="64" fill="#FDFDFB" stroke="#2F4A3A" stroke-width="3"/><path d="M406 114L505 70L604 114Z" fill="#1F6B45" stroke="#2F4A3A" stroke-width="3"/>${[440, 480, 520, 556].map(x => `<rect x="${x}" y="128" width="20" height="20" fill="#9FD8F4" stroke="#2F4A3A" stroke-width="2"/>`).join('')}<line x1="505" y1="70" x2="505" y2="44" stroke="#2F4A3A" stroke-width="3"/><path d="M505 44L528 50L505 56Z" fill="#C9A227"/>`;
+  }
+  return P;
+}
+function golfLayers(A, u, decorOn) {
+  const glow = A.glow ? `filter="url(#${u}glow)"` : '', r = seeded(31);
+  let trees = ''; if (!A.glow && A.rough[0] !== '#8A8A93') for (const [x, y] of [[40, 300], [960, 330], [60, 440], [950, 450]]) trees += roundTree(x, y, .8, '#2F6B33');
+  const pond = A.pond || (decorOn.has('crown') ? [200, 452, 70, 14] : null);
+  return `<defs><linearGradient id="${u}rough" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${A.rough[0]}"/><stop offset="1" stop-color="${A.rough[1]}"/></linearGradient></defs>
+   <rect y="${LIP}" width="${BW}" height="${BH - LIP}" fill="url(#${u}rough)"/>
+   ${pond ? `<ellipse cx="${pond[0]}" cy="${pond[1]}" rx="${pond[2]}" ry="${pond[3]}" fill="${A.water}" stroke="#fff" stroke-width="3" opacity=".95"/>` : ''}
+   <path d="${RIDE_PATH}" fill="none" stroke="${A.fairway}" stroke-width="92" stroke-linecap="round" ${glow}/>
+   ${decorOn.has('checker') ? `<path d="${RIDE_PATH}" fill="none" stroke="#fff" stroke-width="92" stroke-dasharray="26 26" opacity=".12"/>` : ''}
+   <ellipse cx="452" cy="300" rx="46" ry="16" fill="${A.bunker}" stroke="#00000022" stroke-width="2"/><ellipse cx="760" cy="420" rx="38" ry="12" fill="${A.bunker}" stroke="#00000022" stroke-width="2"/>
+   <rect x="96" y="226" width="60" height="22" rx="6" fill="${A.green}" opacity=".9"/><circle cx="110" cy="236" r="3" fill="#fff"/><circle cx="142" cy="236" r="3" fill="#fff"/>
+   <ellipse cx="884" cy="242" rx="72" ry="24" fill="${A.green}" ${glow}/><ellipse cx="906" cy="244" rx="5" ry="2.5" fill="#121212"/>
+   <line x1="906" y1="244" x2="906" y2="176" stroke="#F4F4F4" stroke-width="3"/><path d="M907 176L938 184L907 192Z" fill="#E0262C" ${glow}/>
+   ${trees}`;
+}
+function cycleArt(id, t, u) {
+  const sky = (...c) => `<linearGradient id="${u}sky" x1="0" y1="0" x2="0" y2="1">${c.map((x, i) => `<stop offset="${(i / (c.length - 1)).toFixed(2)}" stop-color="${x}"/>`).join('')}</linearGradient>`;
+  const P = { sand: '#9BC27A', land: ['#7FB069', '#4E8A3E'], road: '#4A4A50', edge: '#E8E8E0', line: '#FFFFFF', cobble: false, defs: '', back: '', gravity: 1, glow: false, pool: ['#fff', '#fff'] };
+  if (id === 'warehouse') {
+    P.defs = sky('#2A2F3A', '#454C5C');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${[200, 500, 800].map(x => `<circle cx="${x}" cy="26" r="9" fill="#FFF3B0"/><circle cx="${x}" cy="26" r="46" fill="#FFF3B0" opacity=".14"/>`).join('')}
+     <path d="M0 80H1000V${LIP}H0Z" fill="#30364A"/>${(() => { const r = seeded(41); let o = ''; for (let y = 92; y < 186; y += 12) for (let x = 6; x < BW; x += 12) o += `<circle cx="${x + (r() * 4 - 2)}" cy="${y}" r="3.6" fill="${['#E0262C', '#FFC800', '#2B59FF', '#FFFFFF', '#22B35E', '#FF3E8A'][Math.floor(r() * 6)]}" opacity=".85"/>`; return o; })()}`;
+    Object.assign(P, { sand: '#7A5536', land: ['#2F8F4A', '#22703A'], road: '#C68B59', edge: '#1F3D99', line: '#E0262C' });
+  } else if (id === 'backyard') {
+    P.defs = sky('#8ED0FF', '#F4FAFF');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="880" cy="50" r="28" fill="#FFE14D"/><path d="M0 150Q200 90 400 140T800 120T1000 130V${LIP}H0Z" fill="#B9C46A"/><path d="M0 170Q300 130 600 166T1000 150V${LIP}H0Z" fill="#9EB25A"/>
+     <rect x="560" y="104" width="90" height="46" fill="#E8B76A" stroke="#7A5530" stroke-width="3"/><path d="M552 106L605 82L658 106Z" fill="#C0563A" stroke="#7A5530" stroke-width="3"/>${[60, 90, 120, 700, 730, 940, 970].map(x => cypress(x, LIP - 2, 1)).join('')}`;
+    Object.assign(P, { sand: '#C9B98A', land: ['#A5B65C', '#7E9440'], road: '#EDE7DA', edge: '#D2C8B0', line: '#EDE7DA' });
+  } else if (id === 'beach') {
+    P.defs = sky('#7CCBFF', '#E8F7FF');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="160" cy="52" r="30" fill="#FFE14D"/><rect y="110" width="${BW}" height="70" fill="#1E88C9"/>
+     ${[[540, 120], [640, 134]].map(([x, y]) => `<path d="M${x} ${y}L${x} ${y - 30}L${x + 22} ${y}Z" fill="#fff" stroke="#121212" stroke-width="2"/><path d="M${x - 14} ${y}H${x + 32}L${x + 24} ${y + 8}H${x - 8}Z" fill="#fff" stroke="#121212" stroke-width="2"/>`).join('')}
+     <path d="M760 ${LIP}V100L820 80L900 96L1000 70V${LIP}Z" fill="#C9A27A" stroke="#7A5A3A" stroke-width="3"/>${['#F2B6A0', '#F7E3A1', '#A8D8EA'].map((c, i) => `<rect x="${790 + i * 60}" y="${104 - i * 6}" width="48" height="60" fill="${c}" stroke="#7A5A3A" stroke-width="2"/>`).join('')}${palm(60, LIP, 1.1)}`;
+    Object.assign(P, { sand: '#E8D3A8', land: ['#8FB46A', '#62904A'] });
+  } else if (id === 'rooftop') {
+    P.defs = sky('#7AB6E8', '#E8F4FF');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${mountains(true, '#8494A8', '#6A7B91')}<rect x="420" y="150" width="70" height="40" fill="#8B5E3C" stroke="#4A2F1B" stroke-width="3"/><path d="M410 152L455 124L500 152Z" fill="#4A2F1B"/><text x="300" y="${LIP - 4}" font-size="30" class="bw-emo">🐄</text><text x="700" y="${LIP - 6}" font-size="26" class="bw-emo">🐄</text>`;
+    Object.assign(P, { sand: '#8DBF6A', land: ['#7AB35A', '#4F7F3A'] });
+  } else if (id === 'outback') {
+    P.defs = sky('#FF9F43', '#FFE2A6');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="850" cy="64" r="38" fill="#FFF1C1"/><path d="M0 175Q250 150 500 172T1000 160V${LIP}H0Z" fill="#D46A3A"/><path d="M360 182C372 126 410 114 560 112C700 112 740 128 752 182Z" fill="#B5452B" stroke="#7A2A18" stroke-width="3"/><text x="160" y="${LIP - 4}" font-size="34" class="bw-emo">🦘</text><text x="860" y="${LIP - 4}" font-size="34" class="bw-emo">🚛</text>`;
+    Object.assign(P, { sand: '#C98468', land: ['#C0623A', '#97452A'], road: '#3E3E44' });
+  } else if (id === 'forest') {
+    P.defs = sky('#C7D6DD', '#EEF3F5');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${mountains(false, '#90A3A8', '#7A8E93')}${Array.from({ length: 22 }, (_, i) => pine(i * 48 + (i % 2) * 16, LIP - 4 + (i % 3) * 4, .95 + (i % 3) * .2, i % 2 ? '#1F4E3A' : '#2D6A4A')).join('')}<rect y="120" width="${BW}" height="30" fill="#fff" opacity=".45"/><rect y="160" width="${BW}" height="18" fill="#fff" opacity=".35"/>`;
+    Object.assign(P, { sand: '#5E8A4A', land: ['#4E8040', '#2F5A2A'] });
+  } else if (id === 'neon') {
+    P.defs = sky('#0B0620', '#24104C') + `<filter id="${u}glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${stars(50, 29, 80)}${cityline(37, 130, '#16102E', '#FF3E8A')}<g filter="url(#${u}glow)"><rect x="120" y="44" width="70" height="120" rx="8" fill="none" stroke="#1EC8FF" stroke-width="4"/><text x="155" y="96" text-anchor="middle" font-family="'Bebas Neue',sans-serif" font-size="34" fill="#1EC8FF">GO</text><rect x="760" y="50" width="160" height="56" rx="28" fill="none" stroke="#FFC800" stroke-width="4"/><text x="840" y="88" text-anchor="middle" font-family="'Bebas Neue',sans-serif" font-size="30" fill="#FFC800" letter-spacing="3">NIGHT CRIT</text></g>`;
+    Object.assign(P, { sand: '#2A2A38', land: ['#1C1C2A', '#101018'], road: '#2B2B36', edge: '#FF3E8A', line: '#1EC8FF', glow: true });
+  } else if (id === 'moon') {
+    P.defs = sky('#1F4E8C', '#9CC8F0');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="880" cy="46" r="26" fill="#FFF3B0"/><path d="M0 ${LIP}L120 130L240 170L380 70L520 150L640 100L800 160L1000 120V${LIP}Z" fill="#8C8F96" stroke="#5E6168" stroke-width="3"/>
+     <rect x="356" y="58" width="46" height="18" fill="#E8E8E8" stroke="#5E6168" stroke-width="2"/><path d="M356 58Q379 34 402 58Z" fill="#fff" stroke="#5E6168" stroke-width="2"/><g fill="#fff" opacity=".9">${cloud(150, 186, 1.6).replace('fill="#fff"', '')}${cloud(620, 192, 1.8).replace('fill="#fff"', '')}${cloud(900, 186, 1.4).replace('fill="#fff"', '')}</g>`;
+    Object.assign(P, { sand: '#B8BBC2', land: ['#A3A6AD', '#7E8188'], road: '#55575E' });
+  } else { // Paris finish (start)
+    P.defs = sky('#8ED0FF', '#F2FAFF');
+    const tower = `<g fill="none" stroke="#5A4A3A" stroke-width="3"><path d="M120 176L160 30L200 176M134 120H186M146 80H174M160 30V12"/><path d="M128 150Q160 128 192 150"/></g>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${cloud(420, 40, 1)}${tower}${Array.from({ length: 9 }, (_, i) => `<rect x="${260 + i * 82}" y="${110 + (i % 2) * 8}" width="76" height="${70 - (i % 2) * 8}" fill="#EFE3CC" stroke="#9A8A6A" stroke-width="2"/><path d="M${256 + i * 82} ${112 + (i % 2) * 8}H${340 + i * 82}L${330 + i * 82} ${96 + (i % 2) * 8}H${266 + i * 82}Z" fill="#6E8094"/>${[0, 1, 2].map(k => `<rect x="${270 + i * 82 + k * 22}" y="${126 + (i % 2) * 8}" width="12" height="18" fill="#7A9BB5"/>`).join('')}`).join('')}`;
+    Object.assign(P, { sand: '#C9C2B0', land: ['#8CB46A', '#5E8A48'], road: '#7A7266', cobble: true });
+  }
+  return P;
+}
+function roadLayers(A, u) {
+  const glow = A.glow ? `filter="url(#${u}glow)"` : '';
+  return `<defs><linearGradient id="${u}land" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${A.land[0]}"/><stop offset="1" stop-color="${A.land[1]}"/></linearGradient></defs>
+   <rect y="${LIP}" width="${BW}" height="${BH - LIP}" fill="url(#${u}land)"/>
+   <path d="${RIDE_PATH}" fill="none" stroke="${A.edge}" stroke-width="70" stroke-linecap="round" ${glow}/>
+   <path d="${RIDE_PATH}" fill="none" stroke="${A.road}" stroke-width="60" stroke-linecap="round"/>
+   ${A.cobble ? `<path d="${RIDE_PATH}" fill="none" stroke="#5E574C" stroke-width="56" stroke-dasharray="3 9" opacity=".55"/>` : ''}
+   <path d="${RIDE_PATH}" fill="none" stroke="${A.line}" stroke-width="3" stroke-dasharray="18 16" ${glow}/>`;
+}
+function sharedDecor(on, t, title, u) {
+  let sky = '', back = '', defs = '';
+  if (on.has('gold')) { defs += `<linearGradient id="${u}gs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDBA74" stop-opacity=".1"/><stop offset="1" stop-color="#FDE68A" stop-opacity=".7"/></linearGradient>`; sky += `<rect width="${BW}" height="${LIP}" fill="url(#${u}gs)"/>`; }
+  if (on.has('tag_crew')) sky += `<path d="M0 22Q250 60 500 26T1000 26" stroke="#121212" stroke-width="2" fill="none"/>${Array.from({ length: 20 }, (_, i) => { const x = 20 + i * 50, y = 30 + Math.sin(i / 3) * 10; return `<path d="M${x - 12} ${y}H${x + 12}L${x} ${y + 20}Z" fill="${[t.accent, '#FFFFFF', t.b1, '#E0262C'][i % 4]}" stroke="#121212" stroke-width="1.5"/>`; }).join('')}`;
+  if (on.has('classpiece')) { const L = String(title).length * 13 + 20; sky += `<g transform="translate(${120 + L} 64)"><path d="M0 0L40 -6L52 0L40 6Z" fill="#E5E7EB" stroke="#121212" stroke-width="2"/><path d="M18 -2L28 -18L34 -2ZM18 2L28 16L34 2Z" fill="#E0262C" stroke="#121212" stroke-width="2"/><line x1="0" y1="0" x2="-30" y2="4" stroke="#121212" stroke-width="1.5"/><rect x="${-30 - L}" y="-10" width="${L}" height="26" fill="#fff" stroke="#121212" stroke-width="2"/><text x="${-30 - L / 2}" y="9" text-anchor="middle" font-family="var(--f-display),serif" font-size="16" fill="#121212">${esc(String(title).slice(0, 24))}</text></g>`; }
+  if (on.has('legends')) sky += `<text x="860" y="124" font-size="44" text-anchor="middle" class="bw-emo">🏆</text>`;
+  if (on.has('bolt')) back += `<g><line x1="96" y1="${LIP}" x2="96" y2="150" stroke="#555" stroke-width="4"/><path d="M56 154Q96 120 136 154Z" fill="${t.b1}" stroke="#121212" stroke-width="2.5"/><path d="M76 154Q96 124 96 124Q96 124 116 154" fill="#fff"/></g>`;
+  if (on.has('aplus')) back += `<g><line x1="930" y1="${LIP}" x2="930" y2="150" stroke="#555" stroke-width="4"/><rect x="900" y="118" width="60" height="40" rx="4" fill="#fff" stroke="#121212" stroke-width="2.5"/><text x="930" y="146" text-anchor="middle" font-family="'Archivo Black',sans-serif" font-size="20" fill="#E0262C">A+</text></g>`;
+  return { sky, back, defs };
+}
+function golfDecor(on, t, title, u) {
+  const S0 = sharedDecor(on, t, title, u); let back = S0.back, sky = S0.sky, low = '';
+  const emo = (x, y, e, s = 30) => `<text x="${x}" y="${y}" font-size="${s}" text-anchor="middle" class="bw-emo">${e}</text>`;
+  if (on.has('hundred')) back += `<g><rect x="200" y="96" width="110" height="74" fill="#0F3D2E" stroke="#C9A227" stroke-width="3"/><text x="255" y="114" text-anchor="middle" font-family="'Lato',sans-serif" font-weight="900" font-size="12" fill="#C9A227">LEADERS</text>${[0, 1, 2].map(i => `<rect x="210" y="${122 + i * 14}" width="70" height="8" fill="#FDFDFB" opacity=".8"/>`).join('')}<text x="294" y="160" text-anchor="middle" font-size="16" class="bw-emo">💯</text><line x1="220" y1="170" x2="220" y2="${LIP}" stroke="#555" stroke-width="4"/><line x1="290" y1="170" x2="290" y2="${LIP}" stroke="#555" stroke-width="4"/></g>`;
+  if (on.has('shred')) back += `<g><line x1="820" y1="${LIP}" x2="820" y2="160" stroke="#6B4423" stroke-width="4"/><rect x="782" y="136" width="76" height="28" rx="4" fill="#FDFDFB" stroke="#121212" stroke-width="2.5"/><text x="820" y="157" text-anchor="middle" font-family="'Playfair Display',serif" font-weight="900" font-size="18" fill="#E0262C">FORE!</text></g>`;
+  if (on.has('flames')) back += [270, 340, 420, 580, 660, 740].map(x => emo(x, LIP - 2, '🌷', 20)).join('');
+  if (on.has('brain')) back += emo(640, LIP - 2, '🏡', 30);
+  if (on.has('fire')) sky += emo(300, 70, '🎆', 46) + emo(680, 56, '🎆', 40);
+  if (on.has('horns')) back += `<g><path d="M880 ${LIP}V150H1000V${LIP}Z" fill="#E8E8E0" stroke="#121212" stroke-width="2.5"/>${[0, 1, 2].map(r => `<rect x="880" y="${160 + r * 16}" width="120" height="4" fill="#9AA0A6"/>`).join('')}${(() => { const rr = seeded(51); let o = ''; for (let r = 0; r < 3; r++) for (let x = 888; x < 1000; x += 12) o += `<circle cx="${x}" cy="${156 + r * 16}" r="4.5" fill="${['#E0262C', '#2B59FF', '#FFC800', '#22B35E', '#FF8FB1'][Math.floor(rr() * 5)]}"/>`; return o; })()}</g>`;
+  if (on.has('board')) back += ['#1F6B45', '#13233F', '#C62828'].map((c, i) => `<rect x="${326 + i * 16}" y="146" width="13" height="58" rx="5" fill="${c}" stroke="#121212" stroke-width="2"/><path d="M${328 + i * 16} 146l-2 -12M${334 + i * 16} 146l2 -14M${338 + i * 16} 146l3 -10" stroke="#888" stroke-width="2"/>`).join('');
+  if (on.has('crown')) low += emo(186, 458, '🦆', 24) + emo(226, 456, '🦆', 20);
+  return { back, sky, wave: low, defs: S0.defs };
+}
+function cycleDecor(on, t, title, u) {
+  const S0 = sharedDecor(on, t, title, u); let back = S0.back, sky = S0.sky, low = '';
+  const emo = (x, y, e, s = 30) => `<text x="${x}" y="${y}" font-size="${s}" text-anchor="middle" class="bw-emo">${e}</text>`;
+  if (on.has('hundred')) sky += `<g><line x1="300" y1="${LIP}" x2="300" y2="100" stroke="#555" stroke-width="5"/><line x1="700" y1="${LIP}" x2="700" y2="100" stroke="#555" stroke-width="5"/><rect x="300" y="96" width="400" height="34" fill="#FFC800" stroke="#121212" stroke-width="3"/><text x="500" y="122" text-anchor="middle" font-family="'Saira Condensed',Impact,sans-serif" font-weight="800" font-style="italic" font-size="24" fill="#121212">💯 100 KM TO GO</text></g>`;
+  if (on.has('crown')) back += [250, 400, 560, 720].map(x => `<line x1="${x}" y1="${LIP}" x2="${x}" y2="156" stroke="#555" stroke-width="3"/><rect x="${x}" y="156" width="30" height="20" fill="#fff" stroke="#121212" stroke-width="1.5"/>${[[7, 5], [19, 5], [13, 12], [7, 17], [23, 15]].map(([dx, dy]) => `<circle cx="${x + dx}" cy="${156 + dy}" r="2.6" fill="#E0262C"/>`).join('')}`).join('');
+  if (on.has('brain')) back += emo(640, LIP - 2, '🚐', 30) + emo(690, LIP - 2, '🚐', 26);
+  if (on.has('fire')) back += [180, 460, 820].map(x => emo(x, LIP - 30, '🚩', 22)).join('');
+  if (on.has('board')) back += emo(340, LIP - 2, '🚲', 28) + emo(372, LIP - 2, '🚲', 28);
+  if (on.has('shred')) low += `<text x="440" y="434" text-anchor="middle" font-family="'Saira Condensed',Impact,sans-serif" font-weight="800" font-style="italic" font-size="22" fill="#fff" opacity=".9" letter-spacing="3">ALLEZ! ALLEZ!</text>`;
+  if (on.has('flames')) low += [20, 60, 100, 900, 940, 980].map((x, i) => emo(x, 468 - (i % 2) * 10, '🌻', 24)).join('');
+  if (on.has('checker')) low += `<g transform="translate(600 398)">${Array.from({ length: 16 }, (_, i) => `<rect x="${(i % 2) * 8}" y="${Math.floor(i / 2) * 8}" width="8" height="8" fill="${(i + Math.floor(i / 2)) % 2 ? '#121212' : '#fff'}"/>`).join('')}</g>`;
+  if (on.has('horns')) low += emo(500, 330, '😈', 34);
+  return { back, sky, wave: low, defs: S0.defs };
+}
+function buggySVG(c) { return `<rect x="-36" y="-12" width="72" height="14" rx="5" fill="#FDFDFB" stroke="#121212" stroke-width="2.5"/><rect x="22" y="-26" width="12" height="16" rx="3" fill="${c}" stroke="#121212" stroke-width="2"/><circle cx="-22" cy="4" r="7" fill="#222"/><circle cx="22" cy="4" r="7" fill="#222"/><circle cx="-22" cy="4" r="2.5" fill="#bbb"/><circle cx="22" cy="4" r="2.5" fill="#bbb"/>`; }
+function bikeSVG(c) { return `<g fill="none" stroke="#121212" stroke-width="2.5"><circle cx="-24" cy="0" r="12"/><circle cx="24" cy="0" r="12"/></g><g fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"><path d="M-24 0L-6 -16H16L24 0M-6 -16L0 0H-24M0 0L16 -16M14 -22L18 -16"/></g><path d="M10 -24H22" stroke="#121212" stroke-width="3" stroke-linecap="round"/>`; }
+
 /* class achievements, parks and decorations */
-const parkName = (id, w) => w === 'surf' ? (SURF_BREAKS[id] || {}).name || id : (PARKS.find(p => p.id === id) || {}).name || id;
-const decorName = (id, w) => w === 'surf' ? SURF_DECOR[id] || id : (DECOR.find(d => d.id === id) || {}).name || id;
-const trickName = (id, w) => w === 'surf' ? SURF_TRICKS[id] || id : (TRICKS.find(x => x.id === id) || {}).name || id;
-const achName = (a, w) => w === 'surf' ? SURF_ACH[a.key] || a.name : a.name;
-const worldOf = c => (c && c.world) === 'surf' ? 'surf' : 'skate';
+const LOCS = { surf: SURF_BREAKS, golf: GOLF_COURSES, cycle: CYCLE_STAGES }, DECOR_N = { surf: SURF_DECOR, golf: GOLF_DECOR, cycle: CYCLE_DECOR }, TRICK_N = { surf: SURF_TRICKS, golf: GOLF_TRICKS, cycle: CYCLE_TRICKS }, ACH_N = { surf: SURF_ACH, golf: GOLF_ACH, cycle: CYCLE_ACH };
+const locMeta = (id, w) => (LOCS[w] && LOCS[w][id]) || PARKS.find(p => p.id === id) || { name: id, where: '', blurb: '' };
+const parkName = (id, w) => locMeta(id, w).name;
+const decorName = (id, w) => (DECOR_N[w] && DECOR_N[w][id]) || (DECOR.find(d => d.id === id) || {}).name || id;
+const trickName = (id, w) => (TRICK_N[w] && TRICK_N[w][id]) || (TRICKS.find(x => x.id === id) || {}).name || id;
+const achName = (a, w) => (ACH_N[w] && ACH_N[w][a.key]) || a.name;
+const achDesc = (a, w) => w === 'skate' ? a.description : a.description.replace(/skaters/g, WORDS[w].riders).replace(/the bowl/g, 'the ' + WORDS[w].scene);
+const worldOf = c => WORLD_DEFAULT_THEME[c && c.world] ? c.world : 'skate';
 function classUnlocks(cid) { return new Set(((S.progress[cid] || {}).unlocks || []).map(x => x.key)); }
 function unlockedRewards(cid) {
   const keys = classUnlocks(cid), parks = new Set(['brickyard']), decor = new Set();
@@ -650,8 +827,8 @@ function classBowl(c) {
   const { parks, decor } = unlockedRewards(c.id), off = new Set(c.decor_off || []);
   return bowlScene(crewFor(c.id), classTheme(c), c.name, { world: worldOf(c), park: parks.has(c.park) ? c.park : 'brickyard', decor: new Set([...decor].filter(d => !off.has(d))) });
 }
-const METRIC = { focus_hours: ['h studied', v => Math.round(v * 10) / 10], quizzes: ['quizzes done', v => v], perfect: ['perfect scores', v => v], members: ['in the crew', v => v], riders: ['riding at once', v => v] };
-function rewardName(a, w = 'skate') { return a.reward_type === 'park' ? parkName(a.reward_id, w) + (w === 'surf' ? ' (surf break)' : ' (park)') : decorName(a.reward_id, w); }
+const METRIC = { focus_hours: ['h studied', v => Math.round(v * 10) / 10], quizzes: ['quizzes done', v => v], perfect: ['perfect scores', v => v], members: ['in the crew', v => v], riders: ['riding at once', v => v], quiet_minutes: ['quiet minutes', v => v] };
+function rewardName(a, w = 'skate') { if (a.reward_type === 'safari') { const an = SAFARI.find(x => x.id === a.reward_id); return an ? `${an.e} ${an.name} for the quiet safari` : a.reward_id; } return a.reward_type === 'park' ? `${parkName(a.reward_id, w)} (${WORDS[w].park})` : decorName(a.reward_id, w); }
 function achievementsPanel(c, teacher) {
   const w = worldOf(c), pr = S.progress[c.id]; if (!pr) return `<p class="muted">Loading achievements…</p>`;
   if (!S.achievements.length) return `<p class="muted">Achievements aren't set up yet.</p>`;
@@ -661,7 +838,7 @@ function achievementsPanel(c, teacher) {
   return `<div class="stack"><div class="row" style="gap:8px">${Object.entries(METRIC).map(([k, [lbl, f]]) => `<span class="chip">${f(st[k] || 0)} ${lbl}</span>`).join('')}<span class="chip ok">${nGot}/${list.length} unlocked</span></div>
    <div class="achgrid">${list.map(a => { const g = got[a.key], v = Number(st[a.metric] || 0), pct = Math.min(100, v / Number(a.threshold) * 100), isNew = g && new Date(g.at).getTime() > recent;
     return `<div class="ach ${g ? 'got' : ''}"><div class="row between" style="gap:6px"><b>${esc(achName(a, w))}</b>${g ? `<span class="chip ${isNew ? 'today' : 'ok'}">${isNew ? 'NEW!' : 'Unlocked'}</span>` : '<span class="chip">🔒</span>'}</div>
-     <span class="small">${esc(w === 'surf' ? a.description.replace(/skaters/g, 'surfers').replace(/bowl/g, 'wave') : a.description)}</span><span class="small"><b>Reward:</b> ${esc(rewardName(a, w))}</span>
+     <span class="small">${esc(achDesc(a, w))}</span><span class="small"><b>Reward:</b> ${esc(rewardName(a, w))}</span>
      ${g ? `<span class="small muted">${g.by_teacher ? 'Unlocked by teacher' : 'Unlocked'} ${esc(new Date(g.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))}</span>` : `<div class="progress"><i style="width:${pct.toFixed(0)}%"></i></div><span class="small muted">${METRIC[a.metric][1](v)} / ${Number(a.threshold)} ${METRIC[a.metric][0]}</span>`}
      ${teacher ? (g ? (g.by_teacher ? `<div>${armBtn('relock|' + c.id + '|' + a.key, 'Lock again', 'Confirm')}</div>` : '') : `<div><button class="btn sm" data-act="unlockach" data-class="${c.id}" data-key="${esc(a.key)}">Unlock now</button></div>`) : ''}</div>`; }).join('')}</div></div>`;
 }
@@ -694,8 +871,8 @@ function tHome() {
    <form class="panel taped stack" data-form="newclass"><h2>New class</h2>
     <div class="formrow"><label class="f">Class name<input type="text" id="nc-name" required placeholder="e.g. Year 9 Science"></label>
     <label class="f">Short description<input type="text" id="nc-sub" placeholder="e.g. Period 3 · Room S4"></label>
-    <label class="f">World<select id="nc-world"><option value="skate">🛹 Skatepark</option><option value="surf" ${WORLD === 'surf' ? 'selected' : ''}>🏄 Surf beach</option></select></label>
-    <label class="f">Theme<select id="nc-theme"><optgroup label="Skatepark themes">${THEMES.filter(t => t.world === 'skate').map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</optgroup><optgroup label="Surf themes">${THEMES.filter(t => t.world === 'surf').map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>${S.themes.length ? `<optgroup label="Your themes">${S.themes.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</optgroup>` : ''}</select></label>
+    <label class="f">World<select id="nc-world">${WORLD_LIST.map(w => `<option value="${w.id}" ${WORLD === w.id ? 'selected' : ''}>${w.emoji} ${esc(w.name)}</option>`).join('')}</select></label>
+    <label class="f">Theme<select id="nc-theme">${WORLD_LIST.map(w => `<optgroup label="${esc(w.name)} themes">${THEMES.filter(t => t.world === w.id).map(t => `<option value="${t.id}" ${t.id === WORLD_DEFAULT_THEME[WORLD] ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>`).join('')}${S.themes.length ? `<optgroup label="Your themes">${S.themes.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</optgroup>` : ''}</select></label>
     <button class="btn primary">Create class</button></div></form>
   </main>` };
 }
@@ -737,7 +914,7 @@ function tClass() {
     <label class="f">Announcement (shown at the top of the class page)<textarea id="cs-ann-${c.id}" placeholder="e.g. Test on Friday! Revise unit 2.">${esc(c.announcement || '')}</textarea></label>
     <div><button class="btn primary">Save changes</button></div></form>
     <div class="panel stack"><h3>Class world</h3><p class="small muted">Each class lives in its own world. Switching changes the look, fonts, scene, shop, tricks and wording for this class. Unlocks, coins and gear carry over.</p>
-     <div class="worldpick">${[['skate', '🛹', 'Skatepark', 'Punk zine look, skate bowl, graffiti and stickers.'], ['surf', '🏄', 'Surf beach', 'Sunny retro surf look, a rolling wave, beach upgrades.']].map(([k, e, n, d]) => `<button class="wp wp-${k}" aria-pressed="${worldOf(c) === k}" data-act="setworld" data-id="${c.id}" data-world="${k}"><span class="wp-e">${e}</span><b>${n}</b><span class="small">${d}</span></button>`).join('')}</div></div>
+     <div class="worldpick">${WORLD_LIST.map(({ id: k, emoji: e, name: n, blurb: d }) => `<button class="wp wp-${k}" aria-pressed="${worldOf(c) === k}" data-act="setworld" data-id="${c.id}" data-world="${k}"><span class="wp-e">${e}</span><b>${n}</b><span class="small">${d}</span></button>`).join('')}</div></div>
     <div class="panel stack"><h3>Class name font</h3><p class="small muted">Used for this class's title and headings.</p>${fontPicker(c.heading_font || '', 'setclassfont', `data-id="${c.id}"`, true)}</div>
     <div class="panel stack"><h3>Class theme</h3><div class="themepick">${allThemes().map(th => themeTile(th, (c.theme_id || 'griptape') === th.id, `data-act="setclasstheme" data-id="${c.id}" data-theme="${esc(th.id)}"`)).join('')}</div></div>
     <div class="panel stack"><h3>Join code</h3><div class="row"><span style="font-family:var(--f-display);font-size:36px;letter-spacing:.15em">${esc(c.code)}</span><button class="btn" data-act="copy" data-text="${esc(c.code)}">Copy</button><button class="btn" data-act="newcode" data-id="${c.id}">Make a new code</button></div><p class="small muted">A new code stops the old one working. ${W().Riders} already in the class stay in it.</p></div>
@@ -814,7 +991,7 @@ function tSettings() {
    <h3>Coin rules</h3>
    <div class="formrow"><label class="f">Coins per focus minute<input type="number" min="0" max="10" id="st-rate" value="${st.focus_rate}"></label><label class="f">Daily focus coin limit<input type="number" min="0" id="st-fcap" value="${st.focus_cap}"></label><label class="f">Daily quiz coin limit<input type="number" min="0" id="st-qcap" value="${st.quiz_cap}"></label><label class="f">Welcome bonus<input type="number" min="0" id="st-welcome" value="${st.welcome}"></label></div>
    <h3>World for home pages</h3><p class="small muted">Used for the sign-in page, your class list and settings. Each class picks its own world in Class settings.</p>
-   <div class="worldpick">${[['skate', '🛹', 'Skatepark'], ['surf', '🏄', 'Surf beach']].map(([k, e, n]) => `<button type="button" class="wp wp-${k}" aria-pressed="${(st.home_world || 'skate') === k}" data-act="sethomeworld" data-world="${k}"><span class="wp-e">${e}</span><b>${n}</b></button>`).join('')}</div>
+   <div class="worldpick">${WORLD_LIST.map(({ id: k, emoji: e, name: n }) => `<button type="button" class="wp wp-${k}" aria-pressed="${(st.home_world || 'skate') === k}" data-act="sethomeworld" data-world="${k}"><span class="wp-e">${e}</span><b>${n}</b></button>`).join('')}</div>
    <h3>Heading font</h3><p class="small muted">Used for class names and big headings everywhere. Each class can override this in its Class settings. Click to switch.</p>${fontPicker(st.heading_font, 'setsitefont')}
    <h3>The bowl / wave</h3>
    <div class="formrow"><label class="f">Hours of focus to ride the bowl or wave<input type="number" min="0" max="100" step="0.5" id="st-bowlh" value="${st.bowl_hours}"></label><label class="f">Count hours<select id="st-bowlp"><option value="week" ${st.bowl_period !== 'all' ? 'selected' : ''}>This week (resets every Monday)</option><option value="all" ${st.bowl_period === 'all' ? 'selected' : ''}>All time</option></select></label></div>
@@ -937,11 +1114,11 @@ function tricksTab(c) {
 function bowlTab(c) {
   const { parks, decor } = unlockedRewards(c.id), off = new Set(c.decor_off || []), t = classTheme(c), cur = parks.has(c.park) ? c.park : 'brickyard';
   const parkAch = id => S.achievements.find(a => a.reward_type === 'park' && a.reward_id === id);
-  const shown = new Set([...decor].filter(d => !off.has(d))), w = worldOf(c), meta = id => w === 'surf' ? SURF_BREAKS[id] : PARKS.find(p => p.id === id);
-  return `<div class="panel stack"><h3>${W().Parks}</h3><p class="small muted">Your class unlocks new ${w === 'surf' ? 'surf breaks' : 'parks'} by studying together. Pick which one the ${W().scene} uses.</p>
+  const shown = new Set([...decor].filter(d => !off.has(d))), w = worldOf(c), meta = id => locMeta(id, w);
+  return `<div class="panel stack"><h3>${W().Parks}</h3><p class="small muted">Your class unlocks new ${W().Parks.toLowerCase()} by studying together. Pick which one the ${W().scene} uses.</p>
    <div class="parkgrid">${PARKS.map(p => { const open = parks.has(p.id), a = parkAch(p.id); return `<div class="park ${open ? '' : 'locked'} ${cur === p.id ? 'on' : ''}"><div class="pthumb">${bowlScene([], t, c.name, { world: w, park: p.id, thumb: true, decor: shown })}${open ? '' : '<span class="plock">🔒</span>'}</div>
      <div class="stack" style="gap:4px;padding:10px"><div class="row between" style="gap:6px"><b>${esc(meta(p.id).name)}</b><span class="chip">${esc(meta(p.id).where)}</span></div><span class="small muted">${esc(meta(p.id).blurb)}</span>
-     ${open ? (cur === p.id ? '<span class="chip ok" style="align-self:flex-start">In use</span>' : `<button class="btn sm primary" style="align-self:flex-start" data-act="setpark" data-id="${c.id}" data-park="${p.id}">Use this ${w === 'surf' ? 'break' : 'park'}</button>`) : `<span class="small"><b>Unlock:</b> ${a ? esc(a.description.replace(/skaters/g, WORDS[w].riders)) : 'Unavailable'}</span>${a ? `<button class="btn sm" style="align-self:flex-start" data-act="unlockach" data-class="${c.id}" data-key="${esc(a.key)}">Unlock now</button>` : ''}`}</div></div>`; }).join('')}</div></div>
+     ${open ? (cur === p.id ? '<span class="chip ok" style="align-self:flex-start">In use</span>' : `<button class="btn sm primary" style="align-self:flex-start" data-act="setpark" data-id="${c.id}" data-park="${p.id}">Use this ${W().park}</button>`) : `<span class="small"><b>Unlock:</b> ${a ? esc(a.description.replace(/skaters/g, WORDS[w].riders)) : 'Unavailable'}</span>${a ? `<button class="btn sm" style="align-self:flex-start" data-act="unlockach" data-class="${c.id}" data-key="${esc(a.key)}">Unlock now</button>` : ''}`}</div></div>`; }).join('')}</div></div>
    <div class="panel stack"><h3>${W().deco}</h3><p class="small muted">Unlocked decorations appear in the ${W().scene} automatically. Hide any you don't want.</p>
    ${decor.size ? `<div class="row" style="gap:8px">${DECOR.filter(d => decor.has(d.id)).map(d => `<button class="btn sm ${off.has(d.id) ? '' : 'primary'}" aria-pressed="${!off.has(d.id)}" data-act="toggledecor" data-id="${c.id}" data-decor="${d.id}">${off.has(d.id) ? 'Hidden' : 'Showing'}: ${esc(decorName(d.id, w))}</button>`).join('')}</div>` : '<p class="muted">None unlocked yet. Keep studying!</p>'}</div>
    <div class="panel stack"><h3>Class achievements</h3><p class="small muted">These unlock automatically as the class hits totals. Use "Unlock now" to give one early, for example as a class reward.</p>${achievementsPanel(c, true)}</div>`;
@@ -960,14 +1137,15 @@ function timerState(b) {
 }
 const fmtClock = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 function timerLabel(b) { const t = timerState(b); return t.mode === 'done' ? "Time's up!" : t.mode === 'idle' ? '0:00' : fmtClock(t.left); }
-function boardHasContent(b) { const t = timerState(b); return !!(b.text.trim() || (b.strokes || []).length || t.mode !== 'idle'); }
+function boardHasContent(b) { const t = timerState(b); return !!((b.text || '').trim() || (b.strokes || []).length || t.mode !== 'idle' || b.quiet_on || b.quiet_animals); }
 function boardPanel(c, preview = false) {
   const b = boardOf(c.id); if (!preview && (!b.visible || !boardHasContent(b))) return '';
   const t = timerState(b);
   return `<section class="panel wbs ${t.mode === 'done' ? 'wb-done' : ''}" data-wbbox="${c.id}"><div class="row between"><h3>📋 Whiteboard</h3>${t.mode !== 'idle' ? `<span class="wbchip ${t.mode}" data-wbt="${c.id}">${timerLabel(b)}</span>` : ''}</div>
    ${t.mode !== 'idle' && b.timer_total ? `<div class="progress wbprog"><i data-wbp="${c.id}" style="width:${t.mode === 'done' ? 0 : Math.round(t.left / b.timer_total * 100)}%"></i></div>` : ''}
-   ${b.text.trim() ? `<div class="wbro">${esc(b.text)}</div>` : ''}
+   ${(b.text || '').trim() ? `<div class="wbro">${esc(b.text)}</div>` : ''}
    ${(b.strokes || []).length ? `<div class="wbsurface ro"><canvas data-board="${c.id}"></canvas></div>` : ''}
+   ${quietStudentBits(c, b)}
    ${preview && !boardHasContent(b) ? '<p class="muted">The board is empty. Open it to add instructions, drawings or a timer.</p>' : ''}
    ${preview && !b.visible ? '<p class="small"><b>Hidden from students.</b></p>' : ''}</section>`;
 }
@@ -991,7 +1169,7 @@ function tBoard() {
     <div class="row" style="gap:6px">${t.mode === 'run' ? `<button class="btn" data-act="wbpause" data-id="${c.id}">Pause</button>` : t.mode === 'pause' ? `<button class="btn primary" data-act="wbresume" data-id="${c.id}">Resume</button>` : ''}${t.mode === 'run' || t.mode === 'pause' ? `<button class="btn" data-act="wbadd" data-id="${c.id}">+1 min</button>` : ''}${t.mode !== 'idle' ? `<button class="btn" data-act="wbreset" data-id="${c.id}">Reset</button>` : ''}</div>
     <p class="small muted">Students see the timer on their class page. When it ends, a sound plays and the screen flashes.</p>
    </aside></div>
-   <div class="wbflash" aria-live="assertive">TIME'S UP!</div></div></main>` };
+   <div class="wbflash" aria-live="assertive">TIME'S UP!</div></div>${quietPanelTeacher(c)}</main>` };
 }
 // drawing
 function drawStrokes(cv, strokes, extra) {
@@ -1052,7 +1230,14 @@ function watchBoard(cid) {
   S.boardSubCid = cid;
   try {
     S.boardSub = sb.channel('board-' + cid).on('postgres_changes', { event: '*', schema: 'public', table: 'boards', filter: `class_id=eq.${cid}` }, pl => {
+      const old = S.boards[cid];
       if (pl.new && pl.new.class_id) S.boards[cid] = pl.new; else if (pl.eventType === 'DELETE') delete S.boards[cid];
+      const strip = b => b ? JSON.stringify({ ...b, quiet_level: 0, quiet_secs: 0, updated_at: 0, quiet_animals: 0 }) : '';
+      if (old && pl.new && strip(old) === strip(pl.new)) {
+        document.querySelectorAll(`[data-qlevel="${cid}"]`).forEach(el => { el.style.width = (pl.new.quiet_level || 0) + '%'; });
+        if ((old.quiet_animals || 0) !== (pl.new.quiet_animals || 0)) document.querySelectorAll(`[data-savanna="${cid}"]`).forEach(el => { el.innerHTML = savannaSVG(cid, pl.new.quiet_animals || 0, (pl.new.quiet_animals || 0) > (old.quiet_animals || 0)); });
+        return;
+      }
       const ta = document.getElementById('wb-text');
       if (S.wbStroke || (ta && document.activeElement === ta)) { paintBoards(); return; }
       render();
@@ -1084,6 +1269,80 @@ function tickBoards() {
   }
 }
 
+/* ---------------- quiet safari (microphone) ---------------- */
+const QS = (() => { let v = {}; try { v = JSON.parse(localStorage.getItem('skate-quiet') || '{}') || {}; } catch { } return { sens: v.sens || 6, every: v.every || 30 }; })();
+const Q = { on: false, cid: null, stream: null, ctx: null, an: null, buf: null, level: 0, streak: 0, secs: 0, count: 0, loud: 0, lastScare: 0, lastSec: 0, lastSync: 0, syncedLevel: -99, msg: '', msgT: 0, newAt: 0 };
+const qThreshold = () => 62 - QS.sens * 5;
+function safariList(cid) { const keys = classUnlocks(cid), rare = new Set(S.achievements.filter(a => a.reward_type === 'safari' && keys.has(a.key)).map(a => a.reward_id)); return SAFARI.filter(a => !a.rare || rare.has(a.id)); }
+function savannaSVG(cid, count, isNew) {
+  const list = safariList(cid), shown = list.slice(0, Math.max(0, Math.min(count, list.length)));
+  const slots = [[120, 236, 46], [300, 248, 58], [480, 240, 66], [660, 250, 52], [840, 238, 48], [210, 278, 50], [390, 284, 44], [570, 282, 54], [750, 280, 46], [920, 276, 40]];
+  return `<svg viewBox="0 0 1000 300" role="img" aria-label="Savanna with ${shown.length} animal${shown.length === 1 ? '' : 's'}">
+   <defs><linearGradient id="sv-sky-${cid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFB347"/><stop offset=".6" stop-color="#FFE29A"/><stop offset="1" stop-color="#FFF3CF"/></linearGradient></defs>
+   <rect width="1000" height="300" fill="url(#sv-sky-${cid})"/><circle cx="760" cy="120" r="70" fill="#FF8C42" opacity=".9"/>
+   <path d="M0 190Q160 150 320 176T640 168T1000 160V300H0Z" fill="#C9A15A"/><path d="M0 214Q250 190 500 206T1000 200V300H0Z" fill="#D9B565"/>
+   ${[[140, 176, 1], [560, 170, 1.3], [900, 166, .9]].map(([x, y, k]) => `<path d="M${x} ${y}V${y - 46 * k}" stroke="#4A3423" stroke-width="${6 * k}"/><path d="M${x} ${y - 30 * k}L${x - 26 * k} ${y - 52 * k}M${x} ${y - 36 * k}L${x + 24 * k} ${y - 54 * k}" stroke="#4A3423" stroke-width="${4 * k}"/><ellipse cx="${x}" cy="${y - 56 * k}" rx="${62 * k}" ry="${13 * k}" fill="#4F6B2E"/>`).join('')}
+   ${Array.from({ length: 50 }, (_, i) => `<path d="M${i * 20 + 6} 300l-4 -16M${i * 20 + 12} 300l3 -20" stroke="#B08A3E" stroke-width="2"/>`).join('')}
+   ${shown.map((a, i) => { const [x, y, s] = slots[i % slots.length]; return `<text x="${x}" y="${y}" font-size="${s}" text-anchor="middle" class="bw-emo sv-a ${isNew && i === shown.length - 1 ? 'sv-new' : ''}">${a.e}<title>${esc(a.name)}</title></text>`; }).join('')}
+   ${shown.length ? '' : `<text x="500" y="150" text-anchor="middle" font-family="var(--f-body),sans-serif" font-weight="800" font-size="30" fill="#7A5A2A">Shhh… stay quiet and the animals will come</text>`}
+   <text x="980" y="34" text-anchor="end" font-family="var(--f-body),sans-serif" font-weight="900" font-size="26" fill="#7A3E12">${shown.length} / ${list.length}</text></svg>`;
+}
+function quietPanelTeacher(c) {
+  const b = boardOf(c.id), list = safariList(c.id), count = Q.cid === c.id ? Q.count : b.quiet_animals || 0, secs = Q.cid === c.id ? Q.secs : b.quiet_secs || 0;
+  const coins = Math.min(50, Math.floor(secs / 60) + count * 2), thr = qThreshold();
+  return `<section class="panel quietbox" id="quietbox"><div class="row between"><h2>🦁 Quiet safari</h2><span class="row" style="gap:8px">
+    ${Q.on && Q.cid === c.id ? `<button class="btn" data-act="qpause">Pause listening</button>` : `<button class="btn primary" data-act="qstart" data-id="${c.id}">${secs || count ? 'Resume listening' : 'Start listening'}</button>`}
+    ${secs || count ? `<button class="btn coinbtn" data-act="qfinish" data-id="${c.id}">Finish & give ${coins} coins each</button>${armBtn('qreset|' + c.id, 'Reset', 'Yes, reset')}` : ''}</span></div>
+   <div class="savanna" data-savanna="${c.id}">${savannaSVG(c.id, count, Date.now() - Q.newAt < 2500)}</div>
+   <div class="qmeter"><span class="label">Noise</span><div class="qbar"><i id="q-level" style="width:${Math.round(Q.level)}%"></i><b class="qthr" id="q-thr" style="left:${thr}%"></b></div><span id="q-state" class="qstate">${Q.on && Q.cid === c.id ? (Q.level < thr ? 'Quiet ✓' : 'Too loud!') : 'Not listening'}</span></div>
+   <div class="formrow"><label class="f">Sensitivity <b id="q-sens-v">${QS.sens}</b>/10 · higher is stricter<input type="range" id="q-sens" min="1" max="10" step="1" value="${QS.sens}"></label>
+    <label class="f" style="flex:0 1 220px">New animal every<select id="q-every">${[10, 15, 30, 60, 120].map(v => `<option value="${v}" ${QS.every === v ? 'selected' : ''}>${v < 60 ? v + ' seconds' : v / 60 + ' minute' + (v > 60 ? 's' : '')}</option>`).join('')}</select></label>
+    <div class="stat" style="flex:0 1 140px"><b id="q-secs">${fmtClock(secs)}</b><span>Quiet time</span></div><div class="stat" style="flex:0 1 140px"><b>${count}/${list.length}</b><span>Animals</span></div></div>
+   <p class="small muted">Uses this device's microphone. Nothing is recorded or saved; only the noise level is measured. Stay below the line to bring animals onto the savanna. Noise scares the newest animal away. Finishing gives every student up to 50 coins (1 per quiet minute + 2 per animal) and adds the quiet minutes to class achievements, which unlock rare animals.</p>
+   ${Q.msg && Date.now() - Q.msgT < 3000 ? `<div class="qmsg">${esc(Q.msg)}</div>` : ''}</section>`;
+}
+function quietStudentBits(c, b) {
+  if (!b.quiet_on && !b.quiet_animals) return '';
+  return `<div class="savanna sm" data-savanna="${c.id}">${savannaSVG(c.id, b.quiet_animals || 0, false)}</div>
+   <div class="qmeter"><span class="label">🤫 Class noise</span><div class="qbar"><i data-qlevel="${c.id}" style="width:${b.quiet_level || 0}%"></i></div><span class="qstate">${b.quiet_on ? 'Listening' : 'Paused'}</span></div>`;
+}
+async function quietStart(cid) {
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) { toast('This browser can’t use the microphone.'); return; }
+    if (!Q.stream || Q.cid !== cid) {
+      quietStop(); Q.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      Q.ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = Q.ctx.createMediaStreamSource(Q.stream);
+      Q.an = Q.ctx.createAnalyser(); Q.an.fftSize = 2048; Q.buf = new Float32Array(Q.an.fftSize); src.connect(Q.an);
+      if (Q.cid !== cid) { const b = boardOf(cid); Q.count = b.quiet_animals || 0; Q.secs = b.quiet_secs || 0; }
+    }
+    Q.cid = cid; Q.on = true; Q.streak = 0; Q.lastSec = performance.now(); Q.ctx.resume?.();
+    saveBoard(cid, { quiet_on: true, quiet_animals: Q.count, quiet_secs: Q.secs, quiet_level: 0 });
+    requestAnimationFrame(quietLoop);
+  } catch (e) { toast(e && e.name === 'NotAllowedError' ? 'Microphone blocked. Allow microphone access for this site in your browser, then try again.' : 'Couldn’t start the microphone.'); }
+}
+function quietStop() { Q.on = false; try { Q.stream?.getTracks().forEach(t => t.stop()); } catch { } try { Q.ctx?.close(); } catch { } Q.stream = null; Q.ctx = null; Q.an = null; }
+function quietLoop(now) {
+  if (!Q.on || !Q.an) return;
+  Q.an.getFloatTimeDomainData(Q.buf); let sum = 0; for (let i = 0; i < Q.buf.length; i++) sum += Q.buf[i] * Q.buf[i];
+  const lvl = Math.min(100, Math.sqrt(sum / Q.buf.length) * 420); Q.level = Q.level * .85 + lvl * .15;
+  const thr = qThreshold(), el = $('#q-level'), st = $('#q-state');
+  if (el) { el.style.width = Q.level.toFixed(0) + '%'; el.classList.toggle('loud', Q.level >= thr); }
+  if (st) st.textContent = Q.level < thr ? 'Quiet ✓' : 'Too loud!';
+  if (now - Q.lastSec >= 1000) {
+    Q.lastSec = now; const list = safariList(Q.cid); let changed = false;
+    if (Q.level < thr) { Q.secs++; Q.streak++; Q.loud = 0; if (Q.streak >= QS.every && Q.count < list.length) { Q.count++; Q.streak = 0; Q.newAt = Date.now(); Q.msg = `${list[Q.count - 1].e} A ${list[Q.count - 1].name.toLowerCase()} wandered in!`; Q.msgT = Date.now(); changed = true; } }
+    else { Q.loud++; Q.streak = 0; if (Q.loud >= 1 && Date.now() - Q.lastScare > 4000 && Q.count > 0) { const gone = list[Q.count - 1]; Q.count--; Q.lastScare = Date.now(); Q.msg = `Too loud! The ${gone.name.toLowerCase()} ran away.`; Q.msgT = Date.now(); changed = true; } }
+    const s1 = $('#q-secs'); if (s1) s1.textContent = fmtClock(Q.secs);
+    if (changed || Date.now() - Q.lastSync > 3000) {
+      Q.lastSync = Date.now(); const lv = Math.round(Q.level);
+      S.boards[Q.cid] = { ...boardOf(Q.cid), quiet_on: true, quiet_animals: Q.count, quiet_secs: Q.secs, quiet_level: lv };
+      q(sb.from('boards').upsert({ ...boardOf(Q.cid), class_id: Q.cid, updated_at: new Date().toISOString() })).catch(() => { });
+    }
+    if (changed && !S.wbStroke && document.activeElement?.id !== 'wb-text') render();
+  }
+  requestAnimationFrame(quietLoop);
+}
+
 /* ---------------- STUDENT ---------------- */
 const myClasses = () => S.classes.slice().sort(byOrder);
 const homeTheme = () => { const mc = myClasses(); return mc.length ? classTheme(mc[0]) : siteTheme(); };
@@ -1112,8 +1371,8 @@ function sClass() {
   const t = classTheme(c), us = unitsOf(c.id), qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), crew = S.crew[c.id], board = crew && crew.slice().sort((a, b) => studyMin(b) - studyMin(a)).slice(0, 10);
   return { theme: t, font: classFont(c), html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'Home' } }) + `
   <main class="wrap">${boardPanel(c)}${c.announcement ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}
-  ${crew ? classBowl(c) : `<div class="bowl bowl-loading"><p class="scrawl">${WORLD === 'surf' ? 'Paddling out…' : 'Rolling up to the bowl…'}</p></div>`}
-  <details class="panel" id="ach-${c.id}"><summary>Class achievements · unlock new ${WORLD === 'surf' ? 'surf breaks and beach upgrades' : 'skateparks, graffiti and stickers'} together</summary><div style="margin-top:14px">${achievementsPanel(c, false)}</div></details>
+  ${crew ? classBowl(c) : `<div class="bowl bowl-loading"><p class="scrawl">${W().loading}</p></div>`}
+  <details class="panel" id="ach-${c.id}"><summary>Class achievements · unlock new ${W().Parks.toLowerCase()} and ${W().deco.toLowerCase()} together</summary><div style="margin-top:14px">${achievementsPanel(c, false)}</div></details>
   <div class="split"><div class="stack"><h2>Units</h2>${us.length ? us.map(u => { const ut = unitTheme(u); return `<button class="unitcard" data-act="openunit" data-id="${u.id}"><span class="sw" style="background:linear-gradient(120deg,${ut.b1},${ut.b2})" aria-hidden="true">${esc((ut.decor || [])[0] || '')}</span><span class="txt"><strong>${esc(u.title)}</strong><span class="small muted">${resOf(u.id).length} resources${S.quizzes.some(x => x.unit_id === u.id) ? ' · revision quiz' : ''}</span></span><span aria-hidden="true" style="font-size:22px">→</span></button>`; }).join('') : "<div class=\"empty\">Your teacher hasn't added any units yet.</div>"}
    <h2 style="margin-top:10px">Revision quizzes</h2>${quizList(qs)}</div>
    <div class="panel taped stack"><h3>Study leaderboard</h3><p class="small muted">Ranked by hours studied ${periodWord()}.</p><div class="lb">${board ? (board.map((b, i) => `<div class="r ${b.is_me ? 'me' : ''}"><span class="rank">${i + 1}</span>${charSVG(b.equipped || {}, b.color)}<span class="n">${esc(b.nickname)}</span><span class="price">${fmtH(studyMin(b))}</span></div>`).join('') || '<p class="small muted">No one yet.</p>') : '<p class="small muted">Loading…</p>'}</div></div></div></main>` };
@@ -1230,6 +1489,7 @@ document.addEventListener('input', e => {
   if (d) { if (el.dataset.bind) d[el.dataset.bind] = el.dataset.bind === 'per' ? Number(el.value) || 0 : el.value; if (el.dataset.qi) d.questions[+el.dataset.qi].q = el.value; if (el.dataset.oi) d.questions[+el.dataset.oi].options[+el.dataset.oj] = el.value; }
   if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; paintThemePreview(); }
   if (el.id === 'fx-label') S.ui.focusLabel = el.value;
+  if (el.id === 'q-sens') { QS.sens = +el.value; const v = $('#q-sens-v'); if (v) v.textContent = QS.sens; const t = $('#q-thr'); if (t) t.style.left = qThreshold() + '%'; try { localStorage.setItem('skate-quiet', JSON.stringify(QS)); } catch { } }
   if (el.dataset.wbtext) { el.rows = Math.max(3, el.value.split('\n').length + 1); const cid = el.dataset.wbtext; S.boards[cid] = { ...boardOf(cid), text: el.value }; clearTimeout(A._wbt); A._wbt = setTimeout(() => q(sb.from('boards').upsert({ ...boardOf(cid), class_id: cid, updated_at: new Date().toISOString() })).catch(e => toast(msg(e))), 600); }
   if (el.id === 'fx-min') { const m = parseInt(el.value, 10); if (m >= 1 && m <= 180) { S.ui.focusMin = m; document.querySelectorAll('[data-act=fmin]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.m === m))); const fc = $('#fx-coins'); if (fc) fc.textContent = `= ${m * site().focus_rate} coins`; } }
 });
@@ -1238,6 +1498,7 @@ document.addEventListener('change', e => {
   if (d && el.dataset.ai) d.questions[+el.dataset.ai].answer = +el.dataset.aj;
   if (d && el.dataset.bind === 'unit_id') d.unit_id = el.value;
   if (el.id === 'fx-class') S.ui.focusClass = el.value;
+  if (el.id === 'q-every') { QS.every = +el.value; try { localStorage.setItem('skate-quiet', JSON.stringify(QS)); } catch { } }
   if (el.dataset.logf) { if (el.dataset.logf === 'stu') S.ui.logStudent = el.value; else S.ui.logFilterCat = el.value; render(); }
   if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; paintThemePreview(); }
 });
@@ -1273,7 +1534,7 @@ F.join = async () => {
     if (!S.uid || !S.isAnon) { const { error } = await sb.auth.signInAnonymously(); if (error) throw error; }
     if (S.ui.joinMode === 'new') await rpc('join_new', { p_code: code, p_nickname: nick, p_pin: pin, p_color: S.ui.color || COLORS[0] });
     else { const id = await rpc('recover_student', { p_code: code, p_nickname: nick, p_pin: pin }); if (!id) throw new Error('no_match'); }
-    S.ui.busy = false; S.view = { name: 'home' }; await resolveSession(); toast(S.ui.joinMode === 'new' ? WORLD === 'surf' ? 'You paddled out! Welcome.' : 'You dropped in! Welcome.' : 'Welcome back!');
+    S.ui.busy = false; S.view = { name: 'home' }; await resolveSession(); toast(S.ui.joinMode === 'new' ? 'Welcome to the crew!' : 'Welcome back!');
   } catch (e) { S.ui.busy = false; S.ui.loginErr = msg(e); render(); }
 };
 F.tlogin = async () => {
@@ -1297,7 +1558,7 @@ A.tsignup = async () => {
 /* teacher actions */
 F.newclass = () => act(async () => {
   const name = $('#nc-name').value.trim(); if (!name) return;
-  const world = $('#nc-world').value === 'surf' ? 'surf' : 'skate', th = THEMES.find(t => t.id === $('#nc-theme').value), theme_id = th && th.world !== world ? (world === 'surf' ? 'reef' : 'griptape') : $('#nc-theme').value;
+  const world = WORLD_DEFAULT_THEME[$('#nc-world').value] ? $('#nc-world').value : 'skate', th = THEMES.find(t => t.id === $('#nc-theme').value), theme_id = th && th.world !== world ? WORLD_DEFAULT_THEME[world] : $('#nc-theme').value;
   await q(sb.from('classes').insert({ name, subtitle: $('#nc-sub').value.trim(), world, theme_id, code: uniqueCode(), sort: S.classes.length }));
   clear('nc-name', 'nc-sub'); await refresh();
 }, 'Class created').catch(() => { });
@@ -1411,6 +1672,7 @@ async function doDelete(k) {
     if (type === 'logout') { await sb.auth.signOut(); S.me = null; S.view = { name: 'home' }; await resolveSession(); return; }
     if (type === 'res') { const r = S.resources.find(x => x.id === id); await q(sb.from('resources').delete().eq('id', id)); await removeFiles([r?.storage_path]); toast('Resource removed'); }
     if (type === 'log') { await q(sb.from('student_log').delete().eq('id', id)); toast('Entry deleted'); }
+    if (type === 'qreset') { if (Q.cid === id) { quietStop(); Object.assign(Q, { count: 0, secs: 0, streak: 0, cid: null }); } saveBoard(id, { quiet_on: false, quiet_animals: 0, quiet_secs: 0, quiet_level: 0 }); toast('Quiet safari reset'); return; }
     if (type === 'wbclear') { saveBoard(id, { text: '', strokes: [], timer_end: null, timer_left: null, timer_total: 0 }); toast('Board cleared'); return; }
     if (type === 'relock') { await q(sb.from('class_unlocks').delete().eq('class_id', id).eq('key', extra)); toast('Locked again'); loadProgress(id); }
     if (type === 'quiz') { await q(sb.from('quizzes').delete().eq('id', id)); toast('Quiz deleted'); }
@@ -1497,7 +1759,7 @@ A.trickall = async el => {
   render();
   try { for (const s of st) await rpc('set_tricks', { p_student: s.id, p_tricks: s.tricks }); loadCrew(cid); toast(`${trickName(k, WORLD)} ${all ? 'locked' : 'unlocked'} for the whole class`); } catch (e) { toast(msg(e)); refresh(); }
 };
-A.setpark = el => act(async () => { await q(sb.from('classes').update({ park: el.dataset.park }).eq('id', el.dataset.id)); await refresh(); }, WORLD === 'surf' ? 'Surf break changed' : 'Skatepark changed').catch(() => { });
+A.setpark = el => act(async () => { await q(sb.from('classes').update({ park: el.dataset.park }).eq('id', el.dataset.id)); await refresh(); }, W().park[0].toUpperCase() + W().park.slice(1) + ' changed').catch(() => { });
 A.toggledecor = el => act(async () => {
   const c = S.classes.find(x => x.id === el.dataset.id), d = el.dataset.decor, off = new Set(c.decor_off || []);
   off.has(d) ? off.delete(d) : off.add(d);
@@ -1506,14 +1768,23 @@ A.toggledecor = el => act(async () => {
 A.unlockach = el => act(async () => { await q(sb.from('class_unlocks').insert({ class_id: el.dataset.class, key: el.dataset.key, by_teacher: true })); await loadProgress(el.dataset.class); }, 'Unlocked for the class!').catch(() => { });
 A.setworld = el => act(async () => {
   const c = S.classes.find(x => x.id === el.dataset.id), w = el.dataset.world, th = THEMES.find(t => t.id === c.theme_id);
-  const patch = { world: w }; if (!th || th.world !== w) patch.theme_id = w === 'surf' ? 'reef' : 'griptape';
+  const patch = { world: w }; if (!th || th.world !== w) patch.theme_id = WORLD_DEFAULT_THEME[w];
   await q(sb.from('classes').update(patch).eq('id', c.id)); await refresh();
 }, 'Class world changed').catch(() => { });
-A.sethomeworld = el => act(async () => { const w = el.dataset.world, th = THEMES.find(t => t.id === site().home_theme); const patch = { home_world: w }; if (!th || th.world !== w) patch.home_theme = w === 'surf' ? 'reef' : 'griptape'; await q(sb.from('settings').update(patch).eq('id', 1)); await refresh(); }, 'Home world changed').catch(() => { });
+A.sethomeworld = el => act(async () => { const w = el.dataset.world, th = THEMES.find(t => t.id === site().home_theme); const patch = { home_world: w }; if (!th || th.world !== w) patch.home_theme = WORLD_DEFAULT_THEME[w]; await q(sb.from('settings').update(patch).eq('id', 1)); await refresh(); }, 'Home world changed').catch(() => { });
 A.setsitefont = el => act(async () => { await q(sb.from('settings').update({ heading_font: el.dataset.font }).eq('id', 1)); await refresh(); }, 'Font changed').catch(() => { });
 A.setclassfont = el => act(async () => { await q(sb.from('classes').update({ heading_font: el.dataset.font }).eq('id', el.dataset.id)); await refresh(); }, 'Font changed').catch(() => { });
 
 
+/* quiet safari actions */
+A.qstart = el => quietStart(el.dataset.id);
+A.qpause = () => { const cid = Q.cid; quietStop(); if (cid) saveBoard(cid, { quiet_on: false, quiet_level: 0, quiet_animals: Q.count, quiet_secs: Q.secs }); else render(); };
+A.qfinish = el => act(async () => {
+  const cid = el.dataset.id, secs = Q.cid === cid ? Q.secs : boardOf(cid).quiet_secs || 0, count = Q.cid === cid ? Q.count : boardOf(cid).quiet_animals || 0;
+  quietStop(); const coins = await rpc('finish_quiet', { p_class: cid, p_secs: secs, p_animals: count });
+  Object.assign(Q, { count: 0, secs: 0, streak: 0, cid: null, msg: '' }); S.boards[cid] = { ...boardOf(cid), quiet_on: false, quiet_animals: 0, quiet_secs: 0, quiet_level: 0 };
+  toast(coins ? `Every student got ${coins} coins. Nice and quiet!` : 'Session finished.'); loadProgress(cid); refresh();
+}).catch(() => { });
 /* whiteboard actions */
 A.openboard = el => { loadBoard(el.dataset.id); go({ name: 'board', classId: el.dataset.id }); };
 A.wbcolor = el => { S.wb.color = el.dataset.c; S.wb.eraser = false; render(); };

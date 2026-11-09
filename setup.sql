@@ -898,6 +898,119 @@ do $$ begin
   end if;
 end $$;
 
+-- ---------------------------------------------------------------------
+--  Quiet meter, golf and cycling (also shipped as update-5.sql)
+-- ---------------------------------------------------------------------
+
+-- Live quiet meter state shown on students' screens
+alter table public.boards add column if not exists quiet_on boolean not null default false;
+alter table public.boards add column if not exists quiet_animals int not null default 0;
+alter table public.boards add column if not exists quiet_level int not null default 0;
+alter table public.boards add column if not exists quiet_secs int not null default 0;
+
+-- Finished quiet sessions (count towards class achievements)
+create table if not exists public.quiet_sessions (
+  id bigint generated always as identity primary key,
+  class_id uuid not null references public.classes(id) on delete cascade,
+  minutes int not null,
+  animals int not null default 0,
+  coins_each int not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table public.quiet_sessions enable row level security;
+drop policy if exists "read" on public.quiet_sessions;
+create policy "read" on public.quiet_sessions for select to authenticated using (public.is_teacher() or public.is_enrolled(class_id));
+
+-- Teacher ends a quiet session: every student in the class gets the same bonus
+create or replace function public.finish_quiet(p_class uuid, p_secs int, p_animals int)
+returns int language plpgsql security definer set search_path = public as $$
+declare v_min int := least(120, greatest(0, coalesce(p_secs, 0) / 60)); v_an int := least(20, greatest(0, coalesce(p_animals, 0))); v_coins int;
+begin
+  if not public.is_teacher() then raise exception 'not_teacher'; end if;
+  v_coins := least(50, v_min + v_an * 2);
+  insert into public.quiet_sessions (class_id, minutes, animals, coins_each) values (p_class, v_min, v_an, v_coins);
+  if v_coins > 0 then
+    update public.students set earned = earned + v_coins where id in (select student_id from public.enrolments where class_id = p_class);
+    insert into public.coin_log (student_id, amount, reason, kind)
+      select student_id, v_coins, 'Quiet class bonus (' || v_min || ' min, ' || v_an || ' animals)', 'quiet' from public.enrolments where class_id = p_class;
+  end if;
+  update public.boards set quiet_on = false, quiet_animals = 0, quiet_level = 0, quiet_secs = 0, updated_at = now() where class_id = p_class;
+  return v_coins;
+end $$;
+
+-- Achievements can now count quiet minutes and reward rare safari animals
+alter table public.achievements drop constraint if exists achievements_metric_check;
+alter table public.achievements add constraint achievements_metric_check check (metric in ('focus_hours','quizzes','perfect','members','riders','quiet_minutes'));
+alter table public.achievements drop constraint if exists achievements_reward_type_check;
+alter table public.achievements add constraint achievements_reward_type_check check (reward_type in ('park','decor','safari'));
+insert into public.achievements (key, name, description, metric, threshold, reward_type, reward_id, sort) values
+  ('hush_hour',     'Hush Hour',     '10 quiet minutes as a class',  'quiet_minutes', 10,  'safari', 'rhino',    24),
+  ('library_lions', 'Library Lions', '30 quiet minutes as a class',  'quiet_minutes', 30,  'safari', 'leopard',  25),
+  ('silent_safari', 'Silent Safari', '60 quiet minutes as a class',  'quiet_minutes', 60,  'safari', 'gorilla',  26),
+  ('whisper_kings', 'Whisper Kings', '120 quiet minutes as a class', 'quiet_minutes', 120, 'safari', 'flamingo', 27)
+on conflict (key) do nothing;
+
+create or replace function public.class_progress(p_class uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare v_members int; v_focus numeric; v_quiz int; v_perfect int; v_riders int; v_need numeric; v_period text; v_quiet int;
+begin
+  if not (public.is_teacher() or public.is_enrolled(p_class)) then raise exception 'no_access'; end if;
+  select count(*) into v_members from public.enrolments where class_id = p_class;
+  select coalesce(sum(s.focus_min), 0) / 60.0 into v_focus
+    from public.students s join public.enrolments e on e.student_id = s.id where e.class_id = p_class;
+  select count(*), count(*) filter (where a.total > 0 and a.score = a.total) into v_quiz, v_perfect
+    from public.quiz_attempts a join public.quizzes q on q.id = a.quiz_id where q.class_id = p_class;
+  select coalesce(sum(minutes), 0) into v_quiet from public.quiet_sessions where class_id = p_class;
+  select bowl_hours * 60, bowl_period into v_need, v_period from public.settings where id = 1;
+  select count(*) into v_riders from (
+    select case when v_period = 'all' then s.focus_min
+                else coalesce((select sum(f.minutes) from public.focus_sessions f
+                               where f.student_id = s.id and f.completed_at >= public.week_start()), 0) end as m
+    from public.students s join public.enrolments e on e.student_id = s.id where e.class_id = p_class) x
+  where x.m > 0 and x.m >= v_need;
+  insert into public.class_unlocks (class_id, key)
+    select p_class, a.key from public.achievements a
+    where (case a.metric when 'focus_hours' then v_focus when 'quizzes' then v_quiz when 'perfect' then v_perfect
+                         when 'members' then v_members when 'riders' then v_riders when 'quiet_minutes' then v_quiet end) >= a.threshold
+  on conflict do nothing;
+  return json_build_object(
+    'stats', json_build_object('focus_hours', round(v_focus, 1), 'quizzes', v_quiz, 'perfect', v_perfect, 'members', v_members, 'riders', v_riders, 'quiet_minutes', v_quiet),
+    'unlocks', coalesce((select json_agg(json_build_object('key', key, 'at', unlocked_at, 'by_teacher', by_teacher))
+                         from public.class_unlocks where class_id = p_class), '[]'::json));
+end $$;
+
+-- Items shared by several worlds
+update public.shop_items set world = 'both' where (slot, id) in (('neck','medal'),('plant','sunflower'),('hat','beanie'));
+
+-- Golf pro shop and cycling bike shop
+insert into public.shop_items (slot, id, name, price, emoji, sort, world) values
+  ('hat','golfcap','Golf cap',30,null,30,'golf'), ('hat','flatcap','Tweed flat cap',45,null,31,'golf'),
+  ('hat','tam','Tartan tam',60,null,32,'golf'), ('hat','golfvisor','Pro visor',80,null,33,'golf'),
+  ('eyes','aviator','Aviator sunnies',45,null,30,'golf'),
+  ('neck','polo','Polo collar',25,null,30,'golf'), ('neck','golftowel','Caddie towel',40,null,31,'golf'),
+  ('pet','duck','Duck',50,'🦆',30,'golf'), ('pet','squirrel','Squirrel',70,'🐿️',31,'golf'),
+  ('pet','swan','Swan',110,'🦢',32,'golf'), ('pet','rabbit','Rabbit',80,'🐇',33,'golf'),
+  ('pet','gator','Alligator',250,'🐊',34,'golf'),
+  ('plant','tulip','Tulip',20,'🌷',30,'golf'), ('plant','blossom','Blossom',40,'🌸',31,'golf'),
+  ('plant','pine','Pine tree',60,'🌲',32,'golf'), ('plant','clover','Lucky clover',90,'🍀',33,'golf'),
+  ('gear','flag','Pin flag',20,'⛳',30,'golf'), ('gear','target','Target',35,'🎯',31,'golf'),
+  ('gear','watch','Fancy watch',70,'⌚',32,'golf'), ('gear','trophy','Trophy',200,'🏆',33,'golf'),
+  ('hat','roadhelmet','Road helmet',35,null,40,'cycle'), ('hat','cyclingcap','Cycling cap',30,null,41,'cycle'),
+  ('hat','aerohelmet','Time-trial helmet',90,null,42,'cycle'), ('hat','laurel','Winner''s laurels',220,null,43,'cycle'),
+  ('eyes','wrap','Wraparound shades',45,null,40,'cycle'),
+  ('neck','bidon','Water bottle',20,null,40,'cycle'),
+  ('pet','dog','Dog',60,'🐕',40,'cycle'), ('pet','goat','Mountain goat',80,'🐐',41,'cycle'),
+  ('pet','cow','Alpine cow',100,'🐄',42,'cycle'), ('pet','rooster','Rooster',120,'🐓',43,'cycle'),
+  ('pet','eagle','Eagle',300,'🦅',44,'cycle'),
+  ('plant','grapes','Grapevine',35,'🍇',40,'cycle'), ('plant','herb','Lavender',45,'🌿',41,'cycle'),
+  ('gear','bike','Spare bike',40,'🚲',40,'cycle'), ('gear','baguette','Baguette',15,'🥖',41,'cycle'),
+  ('gear','cheese','Cheese',25,'🧀',42,'cycle'), ('gear','stopwatch','Stopwatch',50,'⏱️',43,'cycle'),
+  ('gear','map','Route map',60,'🗺️',44,'cycle')
+on conflict (slot, id) do nothing;
+
+revoke execute on all functions in schema public from public, anon;
+grant execute on all functions in schema public to authenticated;
+
 -- =====================================================================
 --  LAST STEP (after you've created your teacher login on the website):
 --  replace the email below with yours and run just this line:

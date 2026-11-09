@@ -537,3 +537,200 @@ body.world-surf::before{background:#0E7490}
 .world-surf .bowl .bw-tag.me rect{fill:#FF7A59}
 .world-surf .bowl .bw-trick{fill:#FFD166;stroke:#0B3142}
 .world-surf .bowl .bw-empty{fill:#fff}
+
+/* =====================================================================
+   QUIET SAFARI
+   ===================================================================== */
+.quietbox{display:flex;flex-direction:column;gap:12px}
+.savanna{line-height:0;border:3px solid var(--edge);overflow:hidden;box-shadow:5px 5px 0 var(--shadow)}
+.savanna svg{width:100%;height:auto;display:block}
+.savanna.sm{box-shadow:none;border-width:2px}
+.sv-a{transform-box:fill-box;transform-origin:50% 100%;animation:svbob 2.4s ease-in-out infinite}
+.sv-a:nth-child(2n){animation-delay:-1.2s}
+.sv-new{animation:svwalk 1.6s ease-out 1,svbob 2.4s ease-in-out 1.6s infinite}
+@keyframes svbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes svwalk{from{transform:translateX(320px);opacity:0}to{transform:translateX(0);opacity:1}}
+@media (prefers-reduced-motion:reduce){.sv-a,.sv-new{animation:none}}
+.qmeter{display:flex;align-items:center;gap:12px}
+.qbar{position:relative;flex:1;height:18px;background:var(--card-2);border:2px solid var(--edge);overflow:visible}
+.qbar i{position:absolute;left:0;top:0;bottom:0;display:block;background:#22B35E;transition:width .1s linear}
+.qbar i.loud{background:#E0262C}
+.qbar .qthr{position:absolute;top:-6px;bottom:-6px;width:4px;background:#121212;transform:translateX(-2px)}
+.qbar .qthr::after{content:"limit";position:absolute;top:-18px;left:50%;transform:translateX(-50%);font:700 11px var(--f-body);color:var(--ink)}
+.qstate{min-width:96px;font-weight:800}
+.qmsg{font-weight:800;font-size:18px;padding:8px 12px;background:var(--yellow);color:#121212;border:2px solid #121212;align-self:flex-start}
+input[type=range]{width:100%;accent-color:var(--accent)}
+
+/* golf clubhouse and cycling team-bus hangouts */
+.den.club{background:#6B4A2E;background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.18) 0 4px,transparent 4px 60px)}
+.den.club .tag{font-family:"Playfair Display",serif;font-style:italic;color:#F3E2A9;text-shadow:2px 2px 0 #2B1A0E}
+.den.club .window{position:absolute;right:7%;top:9%;width:30%;aspect-ratio:4/3;border:6px solid #C9A227;background:linear-gradient(#9ED8FF 0 45%,#5FAF5A 45%)}
+.den.club .window::after{content:"⛳";position:absolute;left:50%;top:30%;font-size:clamp(14px,4cqw,28px)}
+.den.club .shelf{position:absolute;left:6%;top:24%;display:flex;gap:6px;padding:0 6px 2px;border-bottom:6px solid #C9A227;font-size:clamp(18px,5cqw,34px)}
+.den.club .floor{background:#1F6B45;border-top:4px solid #C9A227;background-image:linear-gradient(45deg,rgba(255,255,255,.07) 25%,transparent 25% 75%,rgba(255,255,255,.07) 75%),linear-gradient(-45deg,rgba(255,255,255,.07) 25%,transparent 25% 75%,rgba(255,255,255,.07) 75%);background-size:30px 30px}
+.den.club .mat{position:absolute;left:30%;right:30%;bottom:4%;height:10%;border-radius:50%;background:#8FD06F;box-shadow:inset 0 0 0 3px #5E9A3E}
+.den.bus{background:#D9DDE2;background-image:radial-gradient(#9AA3AD 2px,transparent 2.5px);background-size:22px 22px}
+.den.bus .tag{font-family:"Saira Condensed",Impact,sans-serif;font-style:italic;font-weight:800;text-transform:uppercase;color:#FFC800;text-shadow:3px 3px 0 #111}
+.den.bus .window{position:absolute;right:6%;top:9%;width:34%;aspect-ratio:2/1;border:6px solid #111;border-radius:12px;background:linear-gradient(#9ED8FF 0 55%,#7FB069 55% 75%,#4A4A50 75%)}
+.den.bus .wallbike{position:absolute;left:6%;top:10%;font-size:clamp(34px,11cqw,72px);transform:rotate(-8deg)}
+.den.bus .jersey{position:absolute;left:30%;top:12%;width:14%;aspect-ratio:1;background:#FFC800;border:3px solid #111;clip-path:polygon(25% 0,75% 0,100% 22%,86% 38%,80% 30%,80% 100%,20% 100%,20% 30%,14% 38%,0 22%)}
+.den.bus .floor{background:#2B2B30;border-top:4px solid #FFC800;background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.06) 0 2px,transparent 2px 18px)}
+.den.bus .mat{position:absolute;left:24%;right:24%;bottom:5%;height:9%;background:repeating-linear-gradient(90deg,#111 0 14px,#FFC800 14px 28px);transform:skewX(-20deg)}
+.den.club .plant,.den.bus .plant{left:auto;right:32%;bottom:calc(27% - 2px)}
+
+/* =====================================================================
+   GOLF WORLD — classic country club: cream, deep green, gold, serif
+   ===================================================================== */
+body.world-golf{
+  --paper:#F6F2E6; --card:#FFFDF6; --card-2:#ECE6D2; --ink:#13281D; --muted:#5B6B5F; --edge:#C9BE98;
+  --pink:#C9A227; --yellow:#E8C55A; --good:#1F6B45; --bad:#A83232; --good-bg:#DDEFE2; --bad-bg:#F6DEDA;
+  --shadow:rgba(19,40,29,.12); --tape:rgba(201,162,39,.6); --speck:rgba(19,40,29,.035); --line:#E0D7BC;
+  --f-scrawl:"Playfair Display",Georgia,serif; --f-body:"Lato",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light; background-color:var(--paper);
+  background-image:repeating-linear-gradient(90deg,var(--speck) 0 60px,transparent 60px 120px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body.world-golf{--paper:#0E1F17;--card:#152B21;--card-2:#1D3A2C;--ink:#F1EAD2;--muted:#B5B79F;--edge:#3F5A3E;--good:#7FD69A;--bad:#F08A80;--good-bg:#173A27;--bad-bg:#3A1A18;--shadow:rgba(0,0,0,.35);--speck:rgba(241,234,210,.03);--line:#2A4535;color-scheme:dark}}
+:root[data-theme="dark"] body.world-golf{--paper:#0E1F17;--card:#152B21;--card-2:#1D3A2C;--ink:#F1EAD2;--muted:#B5B79F;--edge:#3F5A3E;--good:#7FD69A;--bad:#F08A80;--good-bg:#173A27;--bad-bg:#3A1A18;--shadow:rgba(0,0,0,.35);--speck:rgba(241,234,210,.03);--line:#2A4535;color-scheme:dark}
+.world-golf h1{font-weight:900;text-transform:none;letter-spacing:0;font-size:clamp(34px,6.4vw,62px)}
+.world-golf h2{font-weight:900;text-transform:none;letter-spacing:0;font-size:28px}
+.world-golf h3{font-family:var(--f-display);font-weight:700;font-stretch:100%;text-transform:none;letter-spacing:0;font-size:20px}
+.world-golf .label,.world-golf label.f,.world-golf th,.world-golf .stat span{letter-spacing:.14em;font-stretch:100%}
+.world-golf .top{background:#0F3D2E;border-bottom:3px solid #C9A227}
+.world-golf .top::after{height:4px;background:linear-gradient(90deg,#C9A227,#F3E2A9,#C9A227)}
+body.world-golf::before{background:#0F3D2E}
+.world-golf .brand span{font-family:var(--f-display);text-transform:none;font-size:25px;letter-spacing:.01em}
+.world-golf .brand svg{transform:none}
+.world-golf .nav button{text-transform:uppercase;font-size:12px;letter-spacing:.16em;font-weight:700;color:#F3E2A9}
+.world-golf .nav button:hover{border-color:transparent;text-decoration:underline;text-underline-offset:6px}
+.world-golf .nav button[aria-current="page"]{background:transparent;color:#fff;transform:none;border:0;border-bottom:2px solid #C9A227}
+.world-golf .coins{border:1px solid #C9A227;box-shadow:none;border-radius:4px}
+.world-golf .topbtn{border:1px solid #C9A227;color:#F3E2A9}
+.world-golf .banner{padding-bottom:0}
+.world-golf .banner::after{height:10px;background:linear-gradient(#C9A227 0 2px,transparent 2px 5px,#C9A227 5px 7px,var(--paper) 7px)}
+.world-golf .banner .wrap{align-items:center;text-align:center;padding-block:44px 40px}
+.world-golf .banner h1{text-shadow:none;max-width:24ch}
+.world-golf .banner .eyebrow{font-family:var(--f-body);font-style:normal;text-transform:uppercase;letter-spacing:.3em;font-size:13px;font-weight:700;transform:none;align-self:center;color:var(--accent);text-shadow:none}
+.world-golf .banner .eyebrow::before,.world-golf .banner .eyebrow::after{content:"—";margin:0 10px;opacity:.7}
+.world-golf .banner p{margin-inline:auto}
+.world-golf .backlink,.world-golf .codechip{align-self:center;transform:none;border-radius:2px}
+.world-golf .codechip{border:1px solid #C9A227;box-shadow:none}
+.world-golf .decor{opacity:.55}
+.world-golf .panel{border:1px solid var(--edge);border-radius:4px;box-shadow:0 0 0 5px var(--card),0 0 0 6px var(--edge),0 12px 24px var(--shadow)}
+.world-golf .panel.taped::before{top:-4px;width:46px;height:8px;background:#C9A227;transform:translateX(-50%)}
+.world-golf .btn{border:1px solid var(--edge);border-radius:3px;box-shadow:none;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-stretch:100%;font-weight:700;background:var(--card)}
+.world-golf .btn:hover{background:var(--card-2)}
+.world-golf .btn:active:not(:disabled){transform:none;box-shadow:none}
+.world-golf .btn.primary{background:#0F3D2E;color:#F3E2A9;border-color:#0F3D2E}
+.world-golf .btn.coinbtn{background:#C9A227;color:#13281D;border-color:#A8861B}
+.world-golf .btn.big{font-size:15px}
+.world-golf .btn.danger{box-shadow:none}
+.world-golf .btn.sm{box-shadow:none;font-size:11px}
+.world-golf input[type=text],.world-golf input[type=email],.world-golf input[type=password],.world-golf input[type=url],.world-golf input[type=number],.world-golf input[type=date],.world-golf select,.world-golf textarea{border:1px solid var(--edge);border-radius:3px;background:var(--card)}
+.world-golf input:focus,.world-golf select:focus,.world-golf textarea:focus{box-shadow:0 0 0 3px rgba(201,162,39,.35)}
+.world-golf .tabs{border-bottom:1px solid var(--edge);gap:0}
+.world-golf .tabs button{border:0;background:none;text-transform:uppercase;letter-spacing:.14em;font-size:12px;font-stretch:100%;padding:10px 14px;border-bottom:3px solid transparent}
+.world-golf .tabs button[aria-selected="true"]{background:none;color:var(--ink);transform:none;border-bottom-color:#C9A227}
+.world-golf .ccard{border:1px solid var(--edge);border-radius:4px;box-shadow:0 10px 24px var(--shadow)}
+.world-golf .grid .ccard:nth-child(n){transform:none}
+.world-golf .grid .ccard:hover{transform:translateY(-3px)}
+.world-golf .ccard .cb{border-bottom:3px double #C9A227;height:120px;align-items:center;justify-content:center;text-align:center}
+.world-golf .ccard .cb strong{text-transform:none;font-size:26px}
+.world-golf .ccard .cb .em{display:none}
+.world-golf .ccard .cbody{align-items:center;text-align:center}
+.world-golf .chip{border:1px solid var(--edge);border-radius:2px;background:var(--card);letter-spacing:.1em}
+.world-golf .chip.kind{background:#0F3D2E;color:#F3E2A9;border-color:#0F3D2E}
+.world-golf .unitcard,.world-golf .res,.world-golf .item,.world-golf .stat,.world-golf .pass,.world-golf .todo,.world-golf .ach,.world-golf .park,.world-golf .fp,.world-golf .wp,.world-golf .opt,.world-golf .flash,.world-golf .durations button,.world-golf .ck,.world-golf .wbtimer{border:1px solid var(--edge);border-radius:4px;box-shadow:0 4px 12px var(--shadow)}
+.world-golf .unitcard .sw{border:0;border-radius:50%}
+.world-golf .item .art{border:1px solid var(--edge);border-radius:50%;background:radial-gradient(circle,var(--card) 55%,var(--card-2))}
+.world-golf .item.on,.world-golf .park.on,.world-golf .fp[aria-pressed="true"],.world-golf .wp[aria-pressed="true"]{box-shadow:0 0 0 2px #C9A227,0 6px 16px var(--shadow)}
+.world-golf .notice{border:1px solid #C9A227;transform:none;box-shadow:none;background:var(--card);border-left:6px solid #C9A227;color:var(--ink)}
+.world-golf .alert,.world-golf .empty{border-radius:3px;border-width:1px}
+.world-golf .empty strong{font-family:var(--f-display);font-style:italic}
+.world-golf .progress{border:1px solid var(--edge);height:10px;border-radius:2px}
+.world-golf .progress i{background:linear-gradient(90deg,#1F6B45,#C9A227)}
+.world-golf .toast{border:1px solid #C9A227;box-shadow:0 10px 24px rgba(0,0,0,.25);background:#0F3D2E;color:#F3E2A9}
+.world-golf .swatch{border-radius:50%;transform:none!important;border:2px solid var(--card);box-shadow:0 0 0 1px var(--edge)}
+.world-golf .stamp{border:3px double #C9A227;color:#1F6B45;transform:none;font-family:var(--f-display);text-transform:none;border-radius:2px}
+.world-golf table tbody tr:nth-child(odd){background:color-mix(in srgb,var(--card-2) 45%,transparent)}
+.world-golf th,.world-golf td{border-bottom-width:1px;border-color:var(--line)}
+.world-golf .den,.world-golf .bowl-scroll,.world-golf .savanna{border:1px solid var(--edge);border-radius:4px;box-shadow:0 0 0 5px var(--card),0 0 0 6px var(--edge),0 12px 24px var(--shadow)}
+.world-golf .bowl figcaption{text-align:center;font-style:italic}
+.world-golf .hero{grid-template-columns:1fr;justify-items:center;text-align:center}
+.world-golf .hero>.den{width:min(640px,100%)}
+.world-golf .hero .row{justify-content:center}
+.world-golf .split{gap:36px}
+.world-golf .bowl .bw-tag rect{fill:#0F3D2E}
+.world-golf .bowl .bw-tag text{fill:#F3E2A9}
+.world-golf .bowl .bw-tag.me rect{fill:#C9A227}
+.world-golf .bowl .bw-trick{fill:#F3E2A9;stroke:#0F3D2E}
+.world-golf .wbsurface,.world-golf .wbtext{border:1px solid var(--edge)!important;border-radius:4px!important;box-shadow:0 4px 12px var(--shadow)}
+.world-golf .qmsg{border:1px solid #C9A227;background:var(--card);color:var(--ink)}
+
+/* =====================================================================
+   CYCLING WORLD — race poster: italic condensed type, slanted shapes, stripes
+   ===================================================================== */
+body.world-cycle{
+  --paper:#F3F3EF; --card:#FFFFFF; --card-2:#EAEAE4; --ink:#111111; --muted:#55565C; --edge:#111111;
+  --pink:#FF3E8A; --yellow:#FFC800; --good:#0A7B3E; --bad:#D9222A; --good-bg:#D9F2E3; --bad-bg:#FFE0E1;
+  --shadow:#FFC800; --tape:rgba(255,62,138,.7); --speck:rgba(17,17,17,.05); --line:#DADAD3;
+  --f-scrawl:"Saira Condensed",Impact,sans-serif; --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light; background-color:var(--paper);
+  background-image:repeating-linear-gradient(-20deg,var(--speck) 0 2px,transparent 2px 22px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body.world-cycle{--paper:#121214;--card:#1C1C20;--card-2:#26262C;--ink:#F3F3EF;--muted:#A9AAB0;--edge:#F3F3EF;--good:#4ADE8F;--bad:#FF6B70;--good-bg:#12331F;--bad-bg:#3A1416;--shadow:#FF3E8A;--speck:rgba(255,255,255,.04);--line:#33333A;color-scheme:dark}}
+:root[data-theme="dark"] body.world-cycle{--paper:#121214;--card:#1C1C20;--card-2:#26262C;--ink:#F3F3EF;--muted:#A9AAB0;--edge:#F3F3EF;--good:#4ADE8F;--bad:#FF6B70;--good-bg:#12331F;--bad-bg:#3A1416;--shadow:#FF3E8A;--speck:rgba(255,255,255,.04);--line:#33333A;color-scheme:dark}
+.world-cycle h1{font-weight:800;font-style:italic;text-transform:uppercase;letter-spacing:-.01em;font-size:clamp(40px,8vw,84px);line-height:.95}
+.world-cycle h2{font-family:var(--f-display);font-weight:800;font-style:italic;text-transform:uppercase;font-size:30px}
+.world-cycle h3{font-family:var(--f-display);font-weight:800;font-style:italic;font-stretch:100%;text-transform:uppercase;letter-spacing:.02em;font-size:21px}
+.world-cycle .top{background:#111}
+.world-cycle .top::after{height:8px;background:linear-gradient(90deg,#FFC800 0 25%,#FF3E8A 25% 50%,#22B35E 50% 75%,#fff 75%)}
+.world-cycle .brand span{font-family:var(--f-display);font-weight:800;font-style:italic;font-size:28px}
+.world-cycle .brand svg{transform:none}
+.world-cycle .nav button{font-family:var(--f-display);font-style:italic;font-weight:800;font-size:16px;letter-spacing:.04em}
+.world-cycle .nav button[aria-current="page"]{background:#FFC800;color:#111;transform:skewX(-14deg)}
+.world-cycle .coins{transform:skewX(-12deg);box-shadow:3px 3px 0 #FF3E8A}
+.world-cycle .banner{padding-bottom:40px;clip-path:polygon(0 0,100% 0,100% calc(100% - 46px),0 100%)}
+.world-cycle .banner::after{display:none}
+.world-cycle .banner .wrap{padding-block:34px 34px}
+.world-cycle .banner h1{text-shadow:5px 5px 0 rgba(0,0,0,.18);max-width:16ch}
+.world-cycle .banner .eyebrow{font-family:var(--f-display);font-style:italic;font-weight:800;text-transform:uppercase;letter-spacing:.08em;transform:skewX(-12deg);background:#111;color:#FFC800;padding:2px 10px;text-shadow:none;font-size:16px}
+.world-cycle .backlink,.world-cycle .codechip{transform:skewX(-12deg)}
+.world-cycle .codechip{box-shadow:5px 5px 0 #FF3E8A}
+.world-cycle .panel{border:0;border-left:8px solid #FFC800;border-radius:0;box-shadow:6px 6px 0 rgba(17,17,17,.1)}
+.world-cycle .panel.taped::before{top:-8px;left:auto;right:16px;width:80px;height:14px;transform:skewX(-20deg);background:repeating-linear-gradient(90deg,#111 0 10px,#fff 10px 20px)}
+.world-cycle .btn{border:2px solid #111;border-radius:0;transform:skewX(-12deg);box-shadow:4px 4px 0 #FFC800;font-family:var(--f-display);font-style:italic;font-weight:800;font-size:16px;letter-spacing:.04em}
+.world-cycle .btn:active:not(:disabled){transform:skewX(-12deg) translate(3px,3px)}
+.world-cycle .btn.primary{background:#111;color:#FFC800}
+.world-cycle .btn.coinbtn{background:#FFC800;color:#111;box-shadow:4px 4px 0 #111}
+.world-cycle .btn.sm{font-size:13px;box-shadow:3px 3px 0 #FFC800}
+.world-cycle .btn.danger{box-shadow:3px 3px 0 var(--bad)}
+.world-cycle .tabs button{transform:skewX(-12deg);border:2px solid #111;font-family:var(--f-display);font-style:italic;font-weight:800;font-size:15px;text-transform:uppercase}
+.world-cycle .tabs button[aria-selected="true"]{background:#FFC800;color:#111;transform:skewX(-12deg)}
+.world-cycle input[type=text],.world-cycle input[type=email],.world-cycle input[type=password],.world-cycle input[type=url],.world-cycle input[type=number],.world-cycle input[type=date],.world-cycle select,.world-cycle textarea{border:2px solid #111;border-radius:0}
+.world-cycle input:focus,.world-cycle select:focus,.world-cycle textarea:focus{box-shadow:4px 4px 0 #FF3E8A}
+.world-cycle .ccard{border:2px solid #111;border-radius:0;box-shadow:6px 6px 0 #FFC800}
+.world-cycle .grid .ccard:nth-child(n){transform:none}
+.world-cycle .grid .ccard:hover{transform:translate(-2px,-3px)}
+.world-cycle .ccard .cb{clip-path:polygon(0 0,100% 0,100% 78%,0 100%);border-bottom:0;height:120px}
+.world-cycle .ccard .cb strong{font-style:italic;font-weight:800;font-size:28px;text-transform:uppercase}
+.world-cycle .chip{transform:skewX(-12deg);border:2px solid #111;border-radius:0}
+.world-cycle .chip.kind{background:#FFC800;color:#111}
+.world-cycle .unitcard,.world-cycle .res,.world-cycle .item,.world-cycle .stat,.world-cycle .pass,.world-cycle .todo,.world-cycle .ach,.world-cycle .park,.world-cycle .fp,.world-cycle .wp,.world-cycle .opt,.world-cycle .flash,.world-cycle .durations button,.world-cycle .ck,.world-cycle .wbtimer{border:2px solid #111;border-radius:0;border-left-width:8px;box-shadow:4px 4px 0 rgba(17,17,17,.12)}
+.world-cycle .stat b{font-style:italic;font-weight:800}
+.world-cycle .item .art{border:0;background:repeating-linear-gradient(-20deg,var(--card-2) 0 10px,var(--card) 10px 20px)}
+.world-cycle .item.on,.world-cycle .park.on,.world-cycle .fp[aria-pressed="true"],.world-cycle .wp[aria-pressed="true"]{border-left-color:#FF3E8A;box-shadow:5px 5px 0 #FF3E8A}
+.world-cycle .notice{transform:skewX(-4deg);box-shadow:6px 6px 0 #111;background:#FFC800}
+.world-cycle .empty strong{font-style:italic;text-transform:uppercase}
+.world-cycle .progress{border:2px solid #111;height:14px;transform:skewX(-14deg)}
+.world-cycle .progress i{background:repeating-linear-gradient(90deg,#FFC800 0 14px,#111 14px 16px)}
+.world-cycle .stamp{border-color:#111;color:#111;background:#FFC800;font-family:var(--f-display);font-style:italic;transform:skewX(-12deg)}
+.world-cycle .den,.world-cycle .bowl-scroll,.world-cycle .savanna{border:2px solid #111;border-radius:0;box-shadow:8px 8px 0 #FFC800}
+.world-cycle .split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+@media (max-width:860px){.world-cycle .split{grid-template-columns:1fr}}
+.world-cycle .hero>:first-child{order:2}
+@media (max-width:760px){.world-cycle .hero>:first-child{order:0}}
+.world-cycle .bowl .bw-tag rect{fill:#111}
+.world-cycle .bowl .bw-tag text{fill:#FFC800;font-style:italic}
+.world-cycle .bowl .bw-tag.me rect{fill:#FF3E8A}
+.world-cycle .bowl .bw-tag.me text{fill:#fff}
+.world-cycle .bowl .bw-trick{fill:#FFC800;font-style:italic}
