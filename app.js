@@ -10,7 +10,7 @@ let sb = null;
 const S = {
   role: null, uid: null, email: null, isAnon: false, loading: true, err: null,
   settings: {}, themes: [], classes: [], units: [], resources: [], quizzes: [], shop: [],
-  students: [], enrol: [], me: null, log: [], attempts: [], crew: {}, notes: [], todos: [], weekMin: 0,
+  students: [], enrol: [], me: null, log: [], attempts: [], crew: {}, notes: [], todos: [], weekMin: 0, progress: {}, achievements: [],
   view: { name: 'home' },
   ui: { tab: 'units', shopTab: 'character', resKind: 'file', armed: null, busy: false, joinMode: 'new', color: null, focusMin: 25, focusLabel: '', focusClass: '', loginErr: '' },
   focus: null, quizRun: null, quizDraft: null, customDraft: null, celebrate: null,
@@ -34,7 +34,7 @@ function weekStart() { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d
 const fmtH = m => { const h = (m || 0) / 60; return (h >= 10 ? Math.round(h) : Math.round(h * 10) / 10) + ' h'; };
 const studyMin = c => site().bowl_period === 'all' ? (c.focus_min || 0) : (c.week_min ?? 0);
 const periodWord = () => site().bowl_period === 'all' ? 'in total' : 'this week';
-const site = () => ({ site_name: 'Skate Skool', teacher_name: '', home_theme: 'griptape', focus_rate: 1, focus_cap: 100, quiz_cap: 150, welcome: 20, bowl_hours: 1, bowl_period: 'week', ...S.settings });
+const site = () => ({ heading_font: 'Rubik Dirt', site_name: 'Skate Skool', teacher_name: '', home_theme: 'griptape', focus_rate: 1, focus_cap: 100, quiz_cap: 150, welcome: 20, bowl_hours: 1, bowl_period: 'week', ...S.settings });
 
 const ERR = {
   bad_code: "That code doesn't match a class. Check it with your teacher.",
@@ -50,7 +50,7 @@ const ERR = {
   not_teacher: 'Only the teacher can do that.',
   already_student: 'This device is already logged in as a student.',
   not_student: 'Join a class first.',
-  bad_minutes: 'Pick one of the session lengths.',
+  bad_minutes: 'Pick between 1 and 180 minutes.',
 };
 function msg(e) {
   const m = String(e?.message || e || '');
@@ -127,16 +127,18 @@ async function loadAll() {
   const [settings, themes, classes, units, resources, quizzes, shop] = await Promise.all([
     q(sb.from('settings').select('*').eq('id', 1).maybeSingle()), sel('themes'), sel('classes'), sel('units'), sel('resources'), sel('quizzes'), sel('shop_items')]);
   Object.assign(S, { settings: settings || {}, themes, classes, units, resources, quizzes, shop });
-  const opt = p => p.then(r => r, () => []); // tables added in update 2: don't break the site if it hasn't been run yet
+  const opt = p => p.then(r => r, () => []); // newer tables: don't break the site if an update hasn't been run yet
+  S.achievements = await opt(q(sb.from('achievements').select('*').order('sort')));
   if (S.role === 'teacher') {
     const [students, enrol, notes, todos] = await Promise.all([
-      sel('students', STUDENT_COLS + ',real_name').catch(() => sel('students', STUDENT_COLS)), sel('enrolments'),
+      sel('students', STUDENT_COLS + ',real_name,tricks').catch(() => sel('students', STUDENT_COLS)), sel('enrolments'),
       opt(q(sb.from('student_log').select('*').order('logged_on', { ascending: false }).order('created_at', { ascending: false }).limit(3000))),
       opt(q(sb.from('todos').select('*').order('created_at')))]);
     S.students = students; S.enrol = enrol; S.notes = notes; S.todos = todos;
+    S.attempts = await q(sb.from('quiz_attempts').select('*').order('created_at').limit(10000)).catch(() => []);
   } else {
     const [me, enrol, log, attempts] = await Promise.all([
-      q(sb.from('students').select(STUDENT_COLS).maybeSingle()), sel('enrolments'),
+      q(sb.from('students').select(STUDENT_COLS + ',tricks').maybeSingle()).catch(() => q(sb.from('students').select(STUDENT_COLS).maybeSingle())), sel('enrolments'),
       q(sb.from('coin_log').select('amount,reason,created_at').order('created_at', { ascending: false }).limit(10)),
       q(sb.from('quiz_attempts').select('quiz_id,score,total,coins,created_at').order('created_at', { ascending: false }).limit(1000))]);
     S.me = me; S.enrol = enrol; S.log = log; S.attempts = attempts;
@@ -156,8 +158,8 @@ function render() {
   const opens = {}; app.querySelectorAll('details[id]').forEach(d => opens[d.id] = d.open);
   const ae = document.activeElement, fid = ae && ae.id; let sel = null; try { sel = [ae.selectionStart, ae.selectionEnd]; } catch { }
   const sy = window.scrollY;
-  const { html, theme } = view();
-  app.setAttribute('style', themeVars(theme));
+  const { html, theme, font } = view();
+  app.setAttribute('style', themeVars(theme) + `;--f-display:${fontCss(font || site().heading_font)}`);
   app.innerHTML = html;
   for (const [id, s] of Object.entries(vals)) { const el = document.getElementById(id); if (!el) continue; if ('c' in s) el.checked = s.c; else el.value = s.v; }
   for (const [id, o] of Object.entries(opens)) { const d = document.getElementById(id); if (d) d.open = o; }
@@ -183,7 +185,7 @@ function view() {
     out = v === 'class' ? sClass() : v === 'unit' ? sUnit() : v === 'todo' ? todoPage() : v === 'focus' ? sFocus() : v === 'shop' ? sShop() : v === 'den' ? sDen() : v === 'quiz' ? sQuiz() : sHome();
   } else out = joinView();
   const err = S.err ? `<div class="wrap" style="padding-top:16px"><div class="alert">${esc(S.err)} <button class="btn sm" data-act="retry">Try again</button></div></div>` : '';
-  return { theme: out.theme || home, html: topbar() + err + out.html };
+  return { theme: out.theme || home, font: out.font, html: topbar() + err + out.html };
 }
 
 const BOARD_SVG = `<svg viewBox="0 0 64 40" aria-hidden="true"><rect x="3" y="8" width="58" height="14" rx="7" fill="#FF2E88" stroke="#F6F6F1" stroke-width="3"/><circle cx="16" cy="30" r="6" fill="#FFE14D" stroke="#F6F6F1" stroke-width="3"/><circle cx="48" cy="30" r="6" fill="#FFE14D" stroke="#F6F6F1" stroke-width="3"/></svg>`;
@@ -206,8 +208,12 @@ function banner(t, { eyebrow = '', title = '', sub = '', back = null, code = nul
   ${eyebrow ? `<span class="eyebrow">${esc(eyebrow)}</span>` : ''}<h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}
   ${code ? `<span class="codechip"><small>Join code</small>${esc(code)}</span>` : ''}</div></section>`;
 }
-function sticker(t, title, emoji, body, attrs) {
-  return `<button class="ccard" ${attrs}><div class="cb" style="background:linear-gradient(120deg,${t.b1},${t.b2});--pat:${PATTERNS[t.pattern] || 'none'};--ink2:${inkFor(mixHex(t.b1, t.b2))}"><strong>${esc(title)}</strong><span class="em" aria-hidden="true">${esc(emoji || '')}</span></div><div class="cbody">${body}</div></button>`;
+const classFont = c => (c && c.heading_font) || site().heading_font;
+function fontPicker(sel, act, extra = '', inherit = false) {
+  return `<div class="fontpick">${inherit ? `<button class="fp" aria-pressed="${!sel}" data-act="${act}" data-font="" ${extra}><span class="fp-s" style="font-family:${fontCss(site().heading_font)}">Aa</span><span class="small">Same as site</span></button>` : ''}${FONTS.map(f => `<button class="fp" aria-pressed="${sel === f.id}" data-act="${act}" data-font="${esc(f.id)}" ${extra}><span class="fp-s" style="font-family:${fontCss(f.id)}">Skate Skool</span><span class="small">${esc(f.name)}</span></button>`).join('')}</div>`;
+}
+function sticker(t, title, emoji, body, attrs, font) {
+  return `<button class="ccard" ${attrs}><div class="cb" style="background:linear-gradient(120deg,${t.b1},${t.b2});--pat:${PATTERNS[t.pattern] || 'none'};--ink2:${inkFor(mixHex(t.b1, t.b2))}"><strong${font ? ` style="font-family:${fontCss(font)}"` : ''}>${esc(title)}</strong><span class="em" aria-hidden="true">${esc(emoji || '')}</span></div><div class="cbody">${body}</div></button>`;
 }
 function themeOptions(sel, inherit) { return (inherit ? `<option value="" ${!sel ? 'selected' : ''}>Same as class</option>` : '') + allThemes().map(t => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join(''); }
 function themeTile(th, on, attrs) { return `<button class="tp" aria-pressed="${on}" ${attrs}><div class="tb" style="background:linear-gradient(120deg,${th.b1},${th.b2});--pat:${PATTERNS[th.pattern] || 'none'}"><span>${esc((th.decor || []).slice(0, 2).join(' '))}</span></div><div class="tn"><span>${esc(th.name)}</span><span class="dot" style="background:${th.accent}"></span></div></button>`; }
@@ -299,64 +305,249 @@ function resCard(r, teacher) {
 
 /* ---------------- the skate bowl ---------------- */
 const REDUCED = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })();
+let BOWL_SEQ = 0;
 function placeChar(svg, x, y, w, h) { return svg.replace('<svg ', `<svg x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w}" height="${h}" `); }
-function bowlScene(crew, t, title) {
+const BW = 1000, BH = 470, DECK = 205, LIP = DECK + 4;
+const EDGE = `M108 ${LIP}C108 400 190 442 330 442L670 442C810 442 892 400 892 ${LIP}`;
+const RIDE_PATH = 'M124 236C128 392 202 427 330 427L670 427C798 427 872 392 876 236';
+const GRAF = `font-family="'Sedgwick Ave Display','Permanent Marker',cursive"`;
+function seeded(n) { let x = n; return () => (x = (x * 9301 + 49297) % 233280) / 233280; }
+const pine = (x, y, s, c) => `<g fill="${c}"><rect x="${x - 3 * s}" y="${y - 10 * s}" width="${6 * s}" height="${10 * s}" fill="#5B3A1E"/><path d="M${x} ${y - 70 * s}L${x - 22 * s} ${y - 30 * s}H${x + 22 * s}ZM${x} ${y - 52 * s}L${x - 28 * s} ${y - 8 * s}H${x + 28 * s}Z"/></g>`;
+const cloud = (x, y, s) => `<g fill="#fff" opacity=".92"><ellipse cx="${x}" cy="${y}" rx="${34 * s}" ry="${14 * s}"/><ellipse cx="${x - 18 * s}" cy="${y - 8 * s}" rx="${18 * s}" ry="${13 * s}"/><ellipse cx="${x + 12 * s}" cy="${y - 12 * s}" rx="${20 * s}" ry="${16 * s}"/></g>`;
+const stars = (n, seed, maxY, op = .8) => { const r = seeded(seed); let o = ''; for (let i = 0; i < n; i++) o += `<circle cx="${(r() * BW).toFixed(0)}" cy="${(r() * maxY).toFixed(0)}" r="${(r() * 1.4 + .4).toFixed(1)}" fill="#fff" opacity="${(op * (.4 + r() * .6)).toFixed(2)}"/>`; return o; };
+
+// Each park draws its own backdrop and colours; the bowl shape stays the same so riders work everywhere.
+function parkArt(id, t, u, title) {
+  const sky = (a, b) => `<linearGradient id="${u}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`;
+  const P = { deck: '#B9B9B4', ground: '#8F8F8A', pool: ['#C9C9C3', '#A6A6A0'], edge: '#121212', coping: '#D5D8DC', defs: '', back: '', inPool: '', front: '', gravity: 1 };
+  if (id === 'warehouse') {
+    P.defs = sky('#3A3A41', '#1E1E22') + `<radialGradient id="${u}lamp"><stop offset="0" stop-color="#FFE9A8" stop-opacity=".55"/><stop offset="1" stop-color="#FFE9A8" stop-opacity="0"/></radialGradient><pattern id="${u}tin" width="16" height="10" patternUnits="userSpaceOnUse"><rect width="8" height="10" fill="#000" opacity=".18"/></pattern>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>
+     ${[120, 420, 720].map(x => `<path d="M${x} 6H${x + 160}L${x + 140} 30H${x + 20}Z" fill="#BFE6FF" opacity=".75"/>`).join('')}
+     <path d="M0 70${Array.from({ length: 21 }, (_, i) => `L${i * 50} ${i % 2 ? 40 : 70}`).join('')}" fill="none" stroke="#141416" stroke-width="5"/><rect y="68" width="${BW}" height="6" fill="#141416"/>
+     <rect y="96" width="${BW}" height="${LIP - 96}" fill="#5C6067"/><rect y="96" width="${BW}" height="${LIP - 96}" fill="url(#${u}tin)"/>
+     ${[200, 500, 800].map(x => `<line x1="${x}" y1="74" x2="${x}" y2="104" stroke="#111" stroke-width="2"/><path d="M${x - 16} 118L${x - 6} 104H${x + 6}L${x + 16} 118Z" fill="#2B2B2B"/><circle cx="${x}" cy="140" r="70" fill="url(#${u}lamp)"/>`).join('')}
+     <rect x="330" y="122" width="340" height="52" fill="${t.accent}" stroke="#121212" stroke-width="4" transform="rotate(-2 500 148)"/><text x="500" y="160" text-anchor="middle" ${GRAF} font-size="34" fill="#121212" transform="rotate(-2 500 148)">${esc(title)}</text>`;
+    Object.assign(P, { deck: '#85858C', ground: '#606067', pool: ['#B4B4B0', '#8E8E8A'] });
+  } else if (id === 'backyard') {
+    P.defs = sky('#7FCBFF', '#DDF3FF') + `<clipPath id="${u}clip"><path d="${EDGE}Z"/></clipPath>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="905" cy="48" r="30" fill="#FFE14D"/>${cloud(380, 50, 1)}${cloud(640, 34, .8)}
+     <rect x="0" y="78" width="230" height="${LIP - 78}" fill="#F2D7B6" stroke="#121212" stroke-width="3"/><path d="M-10 82L115 16L245 82Z" fill="#C0563A" stroke="#121212" stroke-width="3"/>
+     <rect x="70" y="112" width="70" height="52" fill="#9FD8F4" stroke="#121212" stroke-width="3"/><path d="M105 112V164M70 138H140" stroke="#121212" stroke-width="3"/>
+     ${Array.from({ length: 30 }, (_, i) => `<rect x="${230 + i * 26}" y="${116 + (i % 3) * 2}" width="26" height="${LIP - 116}" fill="#C38D5B" stroke="#6B4423" stroke-width="2"/>`).join('')}
+     <path d="M860 ${LIP}Q850 120 880 58" stroke="#8B5A2B" stroke-width="14" fill="none" stroke-linecap="round"/>
+     ${[[-70, 20], [-30, 34], [10, 30], [50, 18], [80, 40]].map(([dx, dy]) => `<path d="M880 58Q${880 + dx / 2} ${40 - dy / 3} ${880 + dx} ${58 + dy}" stroke="#2E8B3E" stroke-width="10" fill="none" stroke-linecap="round"/>`).join('')}<circle cx="874" cy="66" r="6" fill="#6B4423"/><circle cx="886" cy="68" r="6" fill="#6B4423"/>`;
+    P.inPool = `<g clip-path="url(#${u}clip)"><path d="${EDGE}" fill="none" stroke="#2B7FD6" stroke-width="34" stroke-dasharray="14 3"/><ellipse cx="500" cy="440" rx="120" ry="7" fill="#7CCBEF" opacity=".7"/></g>`;
+    Object.assign(P, { deck: '#E9DFCB', ground: '#D8CDB6', pool: ['#D7F2FF', '#8ED3F2'] });
+  } else if (id === 'beach') {
+    P.defs = sky('#7CCBFF', '#FFE7B8');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="760" cy="122" r="46" fill="#FFD166"/>${cloud(250, 46, .9)}
+     <path d="M190 124Q250 92 320 124Z" fill="#2E6F6A"/><rect y="122" width="${BW}" height="${LIP - 122}" fill="#1E88C9"/>
+     ${[138, 160, 182].map((y, i) => `<path d="M0 ${y}${Array.from({ length: 26 }, (_, k) => `q20 ${i % 2 ? 6 : -6} 40 0`).join('')}" fill="none" stroke="#8FD3FF" stroke-width="3" opacity=".8"/>`).join('')}
+     <path d="M600 118L600 96L618 118Z" fill="#fff" stroke="#121212" stroke-width="2"/><path d="M590 118H624L618 124H596Z" fill="#E0262C"/>
+     <path d="M420 52l8 6 8-6M452 66l7 5 7-5" stroke="#121212" stroke-width="2.5" fill="none"/>
+     ${pine(60, LIP, 1.6, '#2F5D3A')}${pine(950, LIP, 1.4, '#2F5D3A')}`;
+    Object.assign(P, { deck: '#E6D3A3', ground: '#EBD39B', pool: ['#DCD7CB', '#BAB4A6'] });
+  } else if (id === 'rooftop') {
+    const r = seeded(7); let city = '', x = 0;
+    while (x < BW) { const w = 50 + r() * 60, h = 60 + r() * 115, top = 178 - h; city += `<rect x="${x.toFixed(0)}" y="${top.toFixed(0)}" width="${w.toFixed(0)}" height="${(h + 40).toFixed(0)}" fill="#1C1633"/>`; for (let wy = top + 10; wy < 168; wy += 16) for (let wx = x + 8; wx < x + w - 10; wx += 14) if (r() > .45) city += `<rect x="${wx.toFixed(0)}" y="${wy.toFixed(0)}" width="6" height="8" fill="#FFE07A" opacity=".85"/>`; x += w + 6; }
+    P.defs = sky('#2A1B5C', '#FF8A5B');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="520" cy="182" r="62" fill="#FFD166" opacity=".95"/>${stars(30, 3, 70, .7)}${city}
+     <g stroke="#3A3A44" stroke-width="4"><line x1="140" y1="100" x2="132" y2="160"/><line x1="190" y1="100" x2="198" y2="160"/></g><rect x="128" y="62" width="76" height="44" rx="6" fill="#6B4E3D" stroke="#121212" stroke-width="3"/><path d="M124 64L166 40L208 64Z" fill="#4A372B" stroke="#121212" stroke-width="3"/>
+     <rect y="162" width="${BW}" height="5" fill="#9AA0A6"/><rect y="182" width="${BW}" height="4" fill="#9AA0A6"/>${Array.from({ length: 26 }, (_, i) => `<rect x="${i * 40}" y="162" width="5" height="${LIP - 162}" fill="#9AA0A6"/>`).join('')}`;
+    Object.assign(P, { deck: '#6B6B78', ground: '#55555F', pool: ['#9393A0', '#71717E'] });
+  } else if (id === 'outback') {
+    P.defs = sky('#FF9F43', '#FFE2A6');
+    const gum = (x, s) => `<path d="M${x} ${LIP}C${x - 4} ${LIP - 50 * s} ${x + 6} ${LIP - 80 * s} ${x - 10} ${LIP - 120 * s}M${x} ${LIP - 70 * s}C${x + 20 * s} ${LIP - 90 * s} ${x + 30 * s} ${LIP - 100 * s} ${x + 34 * s} ${LIP - 118 * s}" stroke="#EFE8DC" stroke-width="${9 * s}" fill="none" stroke-linecap="round"/><g fill="#7E8F4F">${[[-18, -130], [6, -138], [30, -126], [-34, -118], [42, -110]].map(([dx, dy]) => `<ellipse cx="${x + dx * s}" cy="${LIP + dy * s}" rx="${24 * s}" ry="${14 * s}"/>`).join('')}</g>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="850" cy="64" r="38" fill="#FFF1C1"/>
+     <path d="M0 175Q250 150 500 172T1000 160V${LIP}H0Z" fill="#D46A3A"/><path d="M360 182C372 126 410 114 560 112C700 112 740 128 752 182Z" fill="#B5452B" stroke="#7A2A18" stroke-width="3"/>
+     <path d="M420 150q30-8 60 0M600 140q40-6 80 2" stroke="#7A2A18" stroke-width="3" fill="none" opacity=".6"/>
+     ${gum(130, 1.1)}${gum(905, .95)}<text x="650" y="${LIP - 4}" font-size="34" class="bw-emo">🦘</text>`;
+    Object.assign(P, { deck: '#C98468', ground: '#B5532F', pool: ['#DDBCA6', '#C09A81'] });
+  } else if (id === 'forest') {
+    P.defs = sky('#9ED8FF', '#E8F7FF') + `<clipPath id="${u}clip"><path d="${EDGE}Z"/></clipPath>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="120" cy="54" r="28" fill="#FFE14D"/>
+     <path d="M80 170L260 40L430 170ZM360 170L560 20L760 170ZM680 170L860 60L1040 170Z" fill="#7488AE"/><path d="M228 63L260 40L292 63L276 72L260 64L244 72ZM520 49L560 20L600 49L582 60L560 50L538 60ZM826 84L860 60L894 84L878 92L860 84L842 92Z" fill="#fff"/>
+     ${Array.from({ length: 22 }, (_, i) => pine(i * 48 + (i % 2) * 16, LIP - 4 + (i % 3) * 4, .95 + (i % 3) * .2, i % 2 ? '#1F5E3A' : '#2D7A4A')).join('')}`;
+    P.inPool = `<g clip-path="url(#${u}clip)" fill="#6F9A4A" opacity=".45"><ellipse cx="170" cy="330" rx="26" ry="10"/><ellipse cx="860" cy="300" rx="20" ry="8"/><ellipse cx="560" cy="436" rx="40" ry="6"/></g>`;
+    Object.assign(P, { deck: '#A9B39C', ground: '#5E9A3E', pool: ['#C6CCB9', '#A3AA95'] });
+  } else if (id === 'neon') {
+    P.defs = sky('#0B0620', '#24104C') + `<filter id="${u}glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${stars(70, 11, 120)}<path d="M0 ${LIP}V150H80V120H130V160H220V100H300V150H380V130H460V${LIP}ZM560 ${LIP}V120H640V90H720V150H800V110H880V140H1000V${LIP}Z" fill="#140B2E"/>
+     <g filter="url(#${u}glow)"><rect x="50" y="40" width="380" height="70" rx="14" fill="none" stroke="#FF2E88" stroke-width="5"/><text x="240" y="90" text-anchor="middle" ${GRAF} font-size="36" fill="#FF2E88" textLength="${Math.min(340, String(title).length * 20)}" lengthAdjust="spacingAndGlyphs">${esc(String(title).slice(0, 22))}</text>
+     <rect x="640" y="30" width="230" height="64" rx="32" fill="none" stroke="#1EC8FF" stroke-width="5"/><text x="755" y="74" text-anchor="middle" font-family="'Bebas Neue',Impact,sans-serif" font-size="40" fill="#1EC8FF" letter-spacing="4">SHRED 24/7</text>
+     <path d="M0 140${Array.from({ length: 20 }, (_, i) => `Q${i * 50 + 25} 156 ${i * 50 + 50} 140`).join('')}" stroke="#FFE14D" stroke-width="2" fill="none"/>${Array.from({ length: 20 }, (_, i) => `<circle cx="${i * 50 + 25}" cy="150" r="4" fill="${['#FF2E88', '#39FF88', '#1EC8FF', '#FFE14D'][i % 4]}"/>`).join('')}</g>`;
+    Object.assign(P, { deck: '#2A2A33', ground: '#17171E', pool: ['#34344B', '#202030'], edge: '#39FF88', coping: '#FF2E88', glow: true });
+  } else if (id === 'moon') {
+    P.defs = sky('#03030A', '#14142A');
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/>${stars(120, 5, 180, 1)}
+     <circle cx="840" cy="70" r="38" fill="#2B6FD6"/><path d="M816 52q14-10 24 2t20 4M812 80q18 4 22 16M852 92q10-6 18-2" stroke="#3FA34D" stroke-width="9" fill="none" stroke-linecap="round"/><circle cx="840" cy="70" r="38" fill="none" stroke="#9FD3FF" stroke-width="3" opacity=".7"/>
+     <path d="M0 175Q120 150 240 168T520 160T780 170T1000 158V${LIP}H0Z" fill="#7A7A84"/><ellipse cx="300" cy="186" rx="40" ry="8" fill="#66666F"/><ellipse cx="760" cy="190" rx="54" ry="9" fill="#66666F"/>
+     <line x1="560" y1="${LIP - 2}" x2="560" y2="128" stroke="#D5D8DC" stroke-width="4"/><rect x="562" y="128" width="62" height="40" fill="${t.accent}" stroke="#121212" stroke-width="3"/><text x="593" y="158" text-anchor="middle" font-size="24" class="bw-emo">🛹</text>
+     <text x="80" y="150" font-size="44" class="bw-emo" transform="rotate(-30 100 140)">🚀</text>`;
+    P.front = `<g fill="#76767F"><ellipse cx="40" cy="300" rx="24" ry="6"/><ellipse cx="960" cy="360" rx="30" ry="7"/><ellipse cx="60" cy="440" rx="20" ry="5"/></g>`;
+    Object.assign(P, { deck: '#A0A0A8', ground: '#8A8A93', pool: ['#A6A6AE', '#82828B'], gravity: 1.8 });
+  } else { // brickyard (starting park)
+    P.defs = sky(t.b1, t.b2) + `<pattern id="${u}brick" width="48" height="24" patternUnits="userSpaceOnUse"><path d="M0 .75H48M0 12.75H48M24 0V12M0 12V24M48 12V24" stroke="#000" stroke-opacity=".3" stroke-width="1.5" fill="none"/></pattern><pattern id="${u}fence" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M0 0L18 18M18 0L0 18" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/></pattern>`;
+    P.back = `<rect width="${BW}" height="${LIP}" fill="url(#${u}sky)"/><circle cx="860" cy="58" r="34" fill="${t.accent}" opacity=".9"/>
+     <rect y="40" width="${BW}" height="62" fill="url(#${u}fence)"/><rect y="38" width="${BW}" height="4" fill="#9AA0A6"/>
+     <rect y="100" width="${BW}" height="${DECK - 100}" fill="#8E3F2E"/><rect y="100" width="${BW}" height="${DECK - 100}" fill="url(#${u}brick)"/>
+     <text x="70" y="160" ${GRAF} font-size="46" fill="${t.accent}" stroke="#121212" stroke-width="2.5" paint-order="stroke" transform="rotate(-4 70 160)">${esc(title || 'Skate Skool')}</text>`;
+  }
+  return P;
+}
+
+// Graffiti and stickers painted into the bowl once the class unlocks them
+function decorArt(on, t, title, u) {
+  const sticker = (x, y, r, inner, bg = '#fff') => `<g transform="translate(${x} ${y}) rotate(${r})"><rect x="-25" y="-25" width="50" height="50" rx="11" fill="${bg}" stroke="#121212" stroke-width="3"/>${inner}</g>`;
+  const emo = e => `<text y="11" text-anchor="middle" font-size="30" class="bw-emo">${e}</text>`;
+  const piece = (x, y, r, txt, size, fill, sw = 3) => `<text x="${x}" y="${y}" text-anchor="middle" ${GRAF} font-size="${size}" fill="#121212" opacity=".35" transform="rotate(${r} ${x} ${y}) translate(4 4)">${esc(txt)}</text><text x="${x}" y="${y}" text-anchor="middle" ${GRAF} font-size="${size}" fill="${fill}" stroke="#121212" stroke-width="${sw}" paint-order="stroke" transform="rotate(${r} ${x} ${y})">${esc(txt)}</text>`;
+  let defs = '', under = '', over = '', rim = '';
+  if (on.has('flames')) { let f = ''; for (let x = 336; x < 664; x += 34) f += `<path d="M${x} 442Q${x + 4} 418 ${x + 8} 400Q${x + 18} 420 ${x + 20} 408Q${x + 30} 426 ${x + 34} 442Z" fill="#FF8A00" stroke="#D9222A" stroke-width="2.5"/><path d="M${x + 9} 442Q${x + 12} 428 ${x + 14} 420Q${x + 20} 432 ${x + 25} 442Z" fill="#FFE14D"/>`; under += `<g clip-path="url(#${u}pclip)">${f}</g>`; }
+  if (on.has('classpiece')) { defs += `<linearGradient id="${u}cp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.accent}"/><stop offset="1" stop-color="#FF2E88"/></linearGradient>`; under += piece(500, 336, -3, String(title).slice(0, 18), 54, `url(#${u}cp)`, 4); }
+  if (on.has('legends')) { defs += `<linearGradient id="${u}gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF7C2"/><stop offset=".5" stop-color="#D4A017"/><stop offset="1" stop-color="#FFF1A0"/></linearGradient>`; under += piece(500, 270, 2, 'LEGENDS', 36, `url(#${u}gold)`); }
+  if (on.has('tag_crew')) under += `<text x="228" y="350" ${GRAF} font-size="32" fill="none" stroke="${t.accent}" stroke-width="2.5" transform="rotate(-14 228 350)">CREW</text>`;
+  if (on.has('shred')) under += piece(772, 352, 8, 'SHRED', 44, '#39FF88');
+  if (on.has('bolt')) over += sticker(176, 282, -12, `<path d="M4 -19L-11 3H0L-5 20L12 -4H1Z" fill="#FFE14D" stroke="#121212" stroke-width="2.5" stroke-linejoin="round"/>`);
+  if (on.has('aplus')) over += sticker(828, 286, 10, `<text y="10" text-anchor="middle" font-family="'Archivo Black',Impact,sans-serif" font-size="26" fill="#E0262C">A+</text>`, '#FFE14D');
+  if (on.has('crown')) over += sticker(330, 282, 8, emo('👑'));
+  if (on.has('hundred')) over += sticker(672, 282, -6, emo('💯'));
+  if (on.has('brain')) over += sticker(392, 398, -10, emo('🧠'));
+  if (on.has('fire')) over += sticker(608, 398, 12, emo('🔥'));
+  if (on.has('horns')) over += sticker(856, 244, -8, emo('🤘'));
+  if (on.has('board')) over += sticker(146, 246, 14, emo('🛹'));
+  if (on.has('gold')) { defs += `<linearGradient id="${u}cg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFE38A"/><stop offset=".5" stop-color="#C9930E"/><stop offset="1" stop-color="#FFE38A"/></linearGradient>`; rim = `<path d="${EDGE}" fill="none" stroke="url(#${u}cg)" stroke-width="9"/>`; }
+  else if (on.has('checker')) rim = `<path d="${EDGE}" fill="none" stroke="#F6F6F1" stroke-width="9"/><path d="${EDGE}" fill="none" stroke="#121212" stroke-width="9" stroke-dasharray="9 9"/>`;
+  return { defs, under, over, rim };
+}
+
+// Tricks: each lip hit plays the next unlocked trick
+const TRICK_FX = {
+  ollie: { jump: [[0, 0], [.45, -32], [1, 0]] },
+  kickflip: { jump: [[0, 0], [.45, -30], [1, 0]], board: [[0, '1 1'], [.2, '1 1'], [.45, '1 -1'], [.7, '1 1'], [1, '1 1']] },
+  shuvit: { jump: [[0, 0], [.45, -24], [1, 0]], board: [[0, '1 1'], [.2, '1 1'], [.45, '-1 1'], [.7, '1 1'], [1, '1 1']] },
+  treflip: { jump: [[0, 0], [.45, -36], [1, 0]], board: [[0, '1 1'], [.2, '1 1'], [.35, '-1 -1'], [.5, '1 1'], [.65, '-1 -1'], [.8, '1 1'], [1, '1 1']] },
+  indy: { jump: [[0, 0], [.5, -46], [1, 0]], rot: [[0, 0], [.3, -28], [.65, -28], [.9, 0], [1, 0]] },
+  handplant: { jump: [[0, 0], [.3, -12], [.7, -12], [1, 0]], rot: [[0, 0], [.28, 180], [.72, 180], [1, 0]] },
+  spin540: { jump: [[0, 0], [.5, -44], [1, 0]], spin: [[0, '1 1'], [.15, '-1 1'], [.3, '1 1'], [.45, '-1 1'], [.6, '1 1'], [.75, '-1 1'], [.9, '1 1'], [1, '1 1']] },
+  backflip: { jump: [[0, 0], [.5, -56], [1, 0]], rot: [[0, 0], [.12, 0], [.88, -360], [1, -360]] },
+};
+function trickAnims(tricks, D, begin, cy, gravity) {
+  const list = (tricks || []).filter(k => TRICK_FX[k]); if (!list.length || REDUCED) return null;
+  const n = list.length, L = .22 * D, P = n * D / 2, b = (begin - L / 2).toFixed(2);
+  const hits = list.map((k, j) => ({ k, s: j * D / 2, e: j * D / 2 + L }));
+  const neutral = { jump: 0, rot: 0, spin: '1 1', board: '1 1' };
+  const fmt = { jump: v => `0 ${(v * gravity).toFixed(1)}`, rot: v => `${v} 0 ${cy}`, spin: v => v, board: v => v };
+  const type = { jump: 'translate', rot: 'rotate', spin: 'scale', board: 'scale' };
+  const out = {};
+  for (const ch of ['jump', 'rot', 'spin', 'board']) {
+    if (!hits.some(h => TRICK_FX[h.k][ch])) { out[ch] = ''; continue; }
+    const kf = [[0, neutral[ch]]];
+    for (const h of hits) {
+      const fr = TRICK_FX[h.k][ch]; if (!fr) continue;
+      kf.push([h.s, neutral[ch]]); fr.forEach(([q, v]) => kf.push([h.s + q * L, v]));
+      const last = fr[fr.length - 1][1]; if (last !== neutral[ch]) kf.push([h.e + .01, neutral[ch]]);
+    }
+    kf.push([P, neutral[ch]]);
+    let prev = -1; const ks = [], vs = [];
+    for (const [tm, v] of kf) { let x = Math.min(P, Math.max(tm, prev + .0001)); ks.push((x / P).toFixed(4)); vs.push(fmt[ch](v)); prev = x; }
+    ks[ks.length - 1] = '1';
+    out[ch] = `<animateTransform attributeName="transform" type="${type[ch]}" dur="${P.toFixed(2)}s" begin="${b}s" repeatCount="indefinite" values="${vs.join(';')}" keyTimes="${ks.join(';')}"/>`;
+  }
+  out.labels = [...new Set(list)].map(k => {
+    const mine = hits.filter(h => h.k === k), ks = ['0'], vs = ['0'];
+    for (const h of mine) { ks.push((h.s / P).toFixed(4), ((h.s + .08 * L) / P).toFixed(4), (h.e / P).toFixed(4), (Math.min(P, h.e + .01) / P).toFixed(4)); vs.push('0', '1', '1', '0'); }
+    ks.push('1'); vs.push('0');
+    const name = (TRICKS.find(x => x.id === k) || {}).name || k;
+    return `<text class="bw-trick" x="0" y="${cy * 2 - 54}" text-anchor="middle" opacity="0">${esc(name)}!<animate attributeName="opacity" dur="${P.toFixed(2)}s" begin="${b}s" repeatCount="indefinite" values="${vs.join(';')}" keyTimes="${ks.join(';')}" calcMode="discrete"/></text>`;
+  }).join('');
+  return out;
+}
+
+function bowlScene(crew, t, title, opts = {}) {
+  const u = 'bw' + (++BOWL_SEQ) + '-', park = PARKS.find(p => p.id === opts.park) ? opts.park : 'brickyard';
+  const A = parkArt(park, t, u, title || 'Skate Skool'), D8 = decorArt(opts.decor || new Set(), t, title || 'Skate Skool', u);
   const need = Math.max(0, Number(site().bowl_hours) || 0) * 60;
   crew = (crew || []).slice().sort((a, b) => studyMin(b) - studyMin(a));
   const n = crew.length, qualified = crew.filter(c => studyMin(c) >= need && (need > 0 || studyMin(c) > 0));
-  const riders = qualified.slice(0, 8), riderSet = new Set(riders), rest = crew.filter(c => !riderSet.has(c));
+  const riders = opts.thumb ? [] : qualified.slice(0, 8), riderSet = new Set(riders), rest = opts.thumb ? [] : crew.filter(c => !riderSet.has(c));
   const nRide = riders.length, deck = rest.slice(0, 32), extra = Math.max(0, rest.length - 32);
-  const W = 1000, DECK = 205;
   const label = (x, y, txt, me, w = 92) => `<g class="bw-tag${me ? ' me' : ''}"><rect x="${(x - w / 2).toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="17" rx="2"/><text x="${x.toFixed(1)}" y="${y + 12.5}" text-anchor="middle">${esc(String(txt).slice(0, Math.max(4, Math.floor(w / 7.5))))}</text></g>`;
   const tags = [];
   const youMark = (x, y) => `<g class="bw-you"><text x="${x.toFixed(1)}" y="${y}" text-anchor="middle">YOU</text><path d="M${(x - 6).toFixed(1)} ${y + 4}L${x.toFixed(1)} ${y + 12}L${(x + 6).toFixed(1)} ${y + 4}Z"/></g>`;
-  // standing crew on the back deck: two rows when busy
   const rowA = deck.length > 14 ? deck.filter((_, i) => i % 2 === 0) : deck, rowB = deck.length > 14 ? deck.filter((_, i) => i % 2 === 1) : [];
   const standRow = (list, feetY, h, nameDy) => {
-    const w = h * 140 / 168, gap = (W - 80) / Math.max(list.length, 1);
+    const w = h * 140 / 168, gap = (BW - 80) / Math.max(list.length, 1);
     return list.map((c, i) => {
-      const cx = 40 + gap * (i + .5); if (nameDy) tags.push(label(cx, feetY + nameDy, c.nickname, c.is_me, Math.min(92, gap - 4))); const x = cx - w / 2, y = feetY - h, eq = c.equipped || {}, pet = item('pet', eq.pet), gear = item('gear', eq.gear);
+      const cx = 40 + gap * (i + .5); if (nameDy) tags.push(label(cx, feetY + nameDy, c.nickname, c.is_me, Math.min(92, gap - 4)));
+      const x = cx - w / 2, y = feetY - h, eq = c.equipped || {}, pet = item('pet', eq.pet), gear = item('gear', eq.gear);
       return `<g class="bw-kid"><title>${esc(c.nickname)}</title>${placeChar(charSVG(eq, c.color, '', c.nickname), x, y, w.toFixed(1), h)}
        ${gear ? `<text class="bw-emo" x="${(x - 2).toFixed(1)}" y="${feetY - 2}" font-size="${h * .26}">${gear.emoji}</text>` : ''}
        ${pet ? `<text class="bw-emo" x="${(x + w * .78).toFixed(1)}" y="${feetY + 2}" font-size="${h * .36}">${pet.emoji}</text>` : ''}
        ${c.is_me ? youMark(cx, y - 4) : ''}</g>`;
     }).join('');
   };
-  const path = 'M124 236C128 392 202 427 330 427L670 427C798 427 872 392 876 236';
   const riderSVG = riders.map((c, i) => {
-    const eq = c.equipped || {}, h = 74, w = h * 140 / 168, dur = 5.4 + (i % 4) * 0.9 + Math.floor(i / 4) * 0.45, pet = item('pet', eq.pet);
-    const body = `<g transform="translate(${(-w / 2).toFixed(1)},${-h - 9})">${placeChar(charSVG(eq, c.color, '', c.nickname), 0, 0, w.toFixed(1), h)}
-      <g transform="translate(${(w / 2 - 34).toFixed(1)},${h - 2})"><rect x="0" y="0" width="68" height="8" rx="4" class="bw-deck"/><circle cx="14" cy="11" r="4.5" class="bw-wheel"/><circle cx="54" cy="11" r="4.5" class="bw-wheel"/></g>
-      ${pet ? `<text class="bw-emo" x="${(w - 4).toFixed(1)}" y="${h - 30}" font-size="24">${pet.emoji}</text>` : ''}
-      ${label(w / 2, -22, c.nickname, c.is_me)}${c.is_me ? youMark(w / 2, -34) : ''}</g>`;
-    if (REDUCED) { const xs = 300 + (i % 4) * 130 + Math.floor(i / 4) * 60; return `<g transform="translate(${xs},427)"><title>${esc(c.nickname)}</title>${body}</g>`; }
-    return `<g><title>${esc(c.nickname)}</title>${body}<animateMotion dur="${dur}s" begin="${(-i * 1.37).toFixed(2)}s" repeatCount="indefinite" path="${path}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
+    const eq = c.equipped || {}, h = 74, w = h * 140 / 168, D = 5.4 + (i % 4) * .9 + Math.floor(i / 4) * .45, pet = item('pet', eq.pet);
+    const begin = -i * 1.37, cy = -(h / 2) - 9, tr = trickAnims(c.tricks, D, begin, cy, A.gravity) || {};
+    const board = `<g transform="translate(0 -7)"><g>${tr.board || ''}<rect x="-34" y="-4" width="68" height="8" rx="4" class="bw-deck"/><circle cx="-20" cy="7" r="4.5" class="bw-wheel"/><circle cx="20" cy="7" r="4.5" class="bw-wheel"/></g></g>`;
+    const body = `${placeChar(charSVG(eq, c.color, '', c.nickname), -w / 2, -h - 9, w.toFixed(1), h)}${pet ? `<text class="bw-emo" x="${(w / 2 - 6).toFixed(1)}" y="-40" font-size="24">${pet.emoji}</text>` : ''}`;
+    const inner = `<g>${tr.jump || ''}<g>${tr.rot || ''}<g transform="translate(0 ${cy})"><g>${tr.spin || ''}<g transform="translate(0 ${-cy})">${body}${board}</g></g></g></g>
+      ${label(0, -h - 31, c.nickname, c.is_me)}${c.is_me ? youMark(0, -h - 43) : ''}${tr.labels || ''}</g>`;
+    if (REDUCED) { const xs = 300 + (i % 4) * 130 + Math.floor(i / 4) * 60; return `<g transform="translate(${xs},427)"><title>${esc(c.nickname)}</title>${inner}</g>`; }
+    return `<g><title>${esc(c.nickname)}${(c.tricks || []).length ? ' · tricks: ' + esc(c.tricks.map(k => (TRICKS.find(x => x.id === k) || {}).name || k).join(', ')) : ''}</title>${inner}<animateMotion dur="${D}s" begin="${begin.toFixed(2)}s" repeatCount="indefinite" path="${RIDE_PATH}" keyPoints="0.03;0.97;0.03" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/></g>`;
   }).join('');
-  return `<figure class="bowl"><div class="bowl-scroll"><svg viewBox="0 0 ${W} 470" role="img" aria-label="${esc(title || 'Skate bowl')}: ${n} skater${n === 1 ? '' : 's'}">
-   <defs><linearGradient id="bw-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.b1}"/><stop offset="1" stop-color="${t.b2}"/></linearGradient>
-   <linearGradient id="bw-pool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="bw-pool-top"/><stop offset="1" class="bw-pool-bot"/></linearGradient>
-   <pattern id="bw-brick" width="48" height="24" patternUnits="userSpaceOnUse"><path d="M0 .75H48M0 12.75H48M24 0V12M0 12V24M48 12V24" stroke="#000" stroke-opacity=".3" stroke-width="1.5" fill="none"/></pattern>
-   <pattern id="bw-fence" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M0 0L18 18M18 0L0 18" class="bw-fence-line"/></pattern></defs>
-   <rect width="${W}" height="470" fill="url(#bw-sky)"/>
-   <circle cx="860" cy="58" r="34" fill="${t.accent}" opacity=".9"/>
-   <rect y="40" width="${W}" height="62" fill="url(#bw-fence)"/><rect y="38" width="${W}" height="4" class="bw-rail"/>
-   <rect y="100" width="${W}" height="${DECK - 100}" class="bw-wall"/><rect y="100" width="${W}" height="${DECK - 100}" fill="url(#bw-brick)"/>
-   <text x="70" y="160" class="bw-graf" transform="rotate(-4 70 160)">${esc(title || 'Skate Skool')}</text>
-   <rect y="${DECK - 12}" width="${W}" height="16" class="bw-backdeck"/>
+  const glow = A.glow ? `filter="url(#${u}glow)"` : '';
+  const svg = `<svg viewBox="0 0 ${BW} ${BH}" role="img" aria-label="${esc((PARKS.find(p => p.id === park) || {}).name || 'Skate bowl')}${opts.thumb ? '' : `: ${n} skater${n === 1 ? '' : 's'}`}">
+   <defs><linearGradient id="${u}pool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${A.pool[0]}"/><stop offset="1" stop-color="${A.pool[1]}"/></linearGradient><clipPath id="${u}pclip"><path d="${EDGE}Z"/></clipPath>${A.defs}${D8.defs}</defs>
+   ${A.back}
+   <rect y="${DECK - 12}" width="${BW}" height="16" fill="${A.deck}" stroke="#121212" stroke-width="3"/>
    ${standRow(rowB, DECK - 8, 54, 0)}${standRow(rowA, DECK, 66, 8)}
-   <path d="M0 ${DECK + 4}H${W}V470H0Z" class="bw-ground"/>
-   <path d="M108 ${DECK + 4}C108 400 190 442 330 442L670 442C810 442 892 400 892 ${DECK + 4}Z" fill="url(#bw-pool)" class="bw-pool"/>
-   <path d="M108 ${DECK + 4}C108 400 190 442 330 442L670 442C810 442 892 400 892 ${DECK + 4}" class="bw-edge"/>
-   <path d="M0 ${DECK + 4}H108M892 ${DECK + 4}H${W}" class="bw-coping"/><circle cx="108" cy="${DECK + 4}" r="6" class="bw-lip"/><circle cx="892" cy="${DECK + 4}" r="6" class="bw-lip"/>
-   ${tags.join('')}
-   ${n ? '' : `<text x="500" y="340" text-anchor="middle" class="bw-empty">No skaters yet. Share the join code!</text>`}
+   <path d="M0 ${LIP}H${BW}V${BH}H0Z" fill="${A.ground}"/>${A.front}
+   <path d="${EDGE}Z" fill="url(#${u}pool)"/>${A.inPool}${D8.under}
+   <path d="${EDGE}" fill="none" stroke="${A.edge}" stroke-width="4" ${glow}/>${D8.rim}
+   <path d="M0 ${LIP}H108M892 ${LIP}H${BW}" stroke="${A.coping}" stroke-width="10" stroke-linecap="round" ${glow}/><circle cx="108" cy="${LIP}" r="6" fill="${A.coping}" stroke="#121212" stroke-width="3"/><circle cx="892" cy="${LIP}" r="6" fill="${A.coping}" stroke="#121212" stroke-width="3"/>
+   ${D8.over}${tags.join('')}
+   ${n || opts.thumb ? '' : `<text x="500" y="340" text-anchor="middle" class="bw-empty">No skaters yet. Share the join code!</text>`}
    ${riderSVG}
-   ${extra ? `<text x="${W - 16}" y="${DECK + 30}" text-anchor="end" class="bw-more">+${extra} more</text>` : ''}
-  </svg></div><figcaption class="small muted">Study ${esc(String(site().bowl_hours))} ${Number(site().bowl_hours) === 1 ? 'hour' : 'hours'} ${periodWord()} in focus sessions to ride the bowl. ${nRide ? `${nRide} skater${nRide === 1 ? ' is' : 's are'} riding${qualified.length > nRide ? ` (${qualified.length} unlocked)` : ''}.` : 'Nobody has unlocked it yet.'} Everyone else hangs out on the deck.</figcaption></figure>`;
+   ${extra ? `<text x="${BW - 16}" y="${DECK + 30}" text-anchor="end" class="bw-more">+${extra} more</text>` : ''}
+  </svg>`;
+  if (opts.thumb) return svg;
+  const pk = PARKS.find(p => p.id === park);
+  return `<figure class="bowl"><div class="bowl-scroll">${svg}</div><figcaption class="small muted"><b>${esc(pk.name)}.</b> Study ${esc(String(site().bowl_hours))} ${Number(site().bowl_hours) === 1 ? 'hour' : 'hours'} ${periodWord()} in focus sessions to ride the bowl. ${nRide ? `${nRide} skater${nRide === 1 ? ' is' : 's are'} riding${qualified.length > nRide ? ` (${qualified.length} unlocked)` : ''}.` : 'Nobody has unlocked it yet.'} Riders pull the tricks your teacher has unlocked for them.</figcaption></figure>`;
 }
+
+/* class achievements, parks and decorations */
+function classUnlocks(cid) { return new Set(((S.progress[cid] || {}).unlocks || []).map(x => x.key)); }
+function unlockedRewards(cid) {
+  const keys = classUnlocks(cid), parks = new Set(['brickyard']), decor = new Set();
+  for (const a of S.achievements) if (keys.has(a.key)) (a.reward_type === 'park' ? parks : decor).add(a.reward_id);
+  return { parks, decor };
+}
+function classBowl(c) {
+  const { parks, decor } = unlockedRewards(c.id), off = new Set(c.decor_off || []);
+  return bowlScene(crewFor(c.id), classTheme(c), c.name, { park: parks.has(c.park) ? c.park : 'brickyard', decor: new Set([...decor].filter(d => !off.has(d))) });
+}
+const METRIC = { focus_hours: ['h studied', v => Math.round(v * 10) / 10], quizzes: ['quizzes done', v => v], perfect: ['perfect scores', v => v], members: ['skaters', v => v], riders: ['riding at once', v => v] };
+function rewardName(a) { return a.reward_type === 'park' ? ((PARKS.find(p => p.id === a.reward_id) || {}).name || a.reward_id) + ' (park)' : ((DECOR.find(d => d.id === a.reward_id) || {}).name || a.reward_id); }
+function achievementsPanel(c, teacher) {
+  const pr = S.progress[c.id]; if (!pr) return `<p class="muted">Loading achievements…</p>`;
+  if (!S.achievements.length) return `<p class="muted">Achievements aren't set up yet.</p>`;
+  const got = Object.fromEntries((pr.unlocks || []).map(x => [x.key, x])), st = pr.stats || {};
+  const list = S.achievements.slice().sort((a, b) => a.sort - b.sort), nGot = list.filter(a => got[a.key]).length;
+  const recent = Date.now() - 3 * 864e5;
+  return `<div class="stack"><div class="row" style="gap:8px">${Object.entries(METRIC).map(([k, [lbl, f]]) => `<span class="chip">${f(st[k] || 0)} ${lbl}</span>`).join('')}<span class="chip ok">${nGot}/${list.length} unlocked</span></div>
+   <div class="achgrid">${list.map(a => { const g = got[a.key], v = Number(st[a.metric] || 0), pct = Math.min(100, v / Number(a.threshold) * 100), isNew = g && new Date(g.at).getTime() > recent;
+    return `<div class="ach ${g ? 'got' : ''}"><div class="row between" style="gap:6px"><b>${esc(a.name)}</b>${g ? `<span class="chip ${isNew ? 'today' : 'ok'}">${isNew ? 'NEW!' : 'Unlocked'}</span>` : '<span class="chip">🔒</span>'}</div>
+     <span class="small">${esc(a.description)}</span><span class="small"><b>Reward:</b> ${esc(rewardName(a))}</span>
+     ${g ? `<span class="small muted">${g.by_teacher ? 'Unlocked by teacher' : 'Unlocked'} ${esc(new Date(g.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))}</span>` : `<div class="progress"><i style="width:${pct.toFixed(0)}%"></i></div><span class="small muted">${METRIC[a.metric][1](v)} / ${Number(a.threshold)} ${METRIC[a.metric][0]}</span>`}
+     ${teacher ? (g ? (g.by_teacher ? `<div>${armBtn('relock|' + c.id + '|' + a.key, 'Lock again', 'Confirm')}</div>` : '') : `<div><button class="btn sm" data-act="unlockach" data-class="${c.id}" data-key="${esc(a.key)}">Unlock now</button></div>`) : ''}</div>`; }).join('')}</div></div>`;
+}
+async function loadProgress(cid) { try { S.progress[cid] = await rpc('class_progress', { p_class: cid }); } catch { S.progress[cid] = { stats: {}, unlocks: [] }; } render(); }
+
 function crewFor(cid) {
   if (S.crew[cid] && S.crew[cid].length && 'week_min' in S.crew[cid][0]) return S.crew[cid];
-  if (S.role === 'teacher') return studentsIn(cid).map(s => ({ nickname: s.nickname, color: s.color, equipped: s.equipped, lifetime: s.earned, focus_min: s.focus_min, week_min: S.crew[cid] ? 0 : undefined, is_me: false }));
+  if (S.role === 'teacher') return studentsIn(cid).map(s => ({ nickname: s.nickname, color: s.color, equipped: s.equipped, lifetime: s.earned, focus_min: s.focus_min, week_min: S.crew[cid] ? 0 : undefined, tricks: s.tricks || [], is_me: false }));
   return S.crew[cid];
 }
 function bowlPass() {
@@ -365,6 +556,7 @@ function bowlPass() {
   return `<div class="pass ${done ? 'on' : ''}"><div class="row between"><span class="label">Bowl pass</span><b>${fmtH(have)} / ${fmtH(need)} ${periodWord()}</b></div><div class="progress"><i style="width:${pct.toFixed(0)}%"></i></div><span class="small">${done ? "You're riding the bowl! 🛹" : `Study ${fmtH(need - have)} more in focus sessions to ride the bowl.`}</span></div>`;
 }
 async function loadCrew(cid) {
+  loadProgress(cid);
   try { S.crew[cid] = await rpc('class_crew', { p_class: cid }); }
   catch { try { S.crew[cid] = await rpc('class_leaderboard', { p_class: cid }); } catch { S.crew[cid] = []; } }
   render();
@@ -373,7 +565,7 @@ async function loadCrew(cid) {
 /* ---------------- TEACHER ---------------- */
 function tHome() {
   const st = site(), t = themeById(st.home_theme), cls = S.classes.slice().sort(byOrder);
-  const cards = cls.map(c => { const ct = classTheme(c); return sticker(ct, c.name, (ct.decor || [])[0], `<span class="small muted">${esc(c.subtitle || '')}</span><div class="row" style="gap:6px"><span class="chip">Code ${esc(c.code)}</span><span class="chip">${studentsIn(c.id).length} skaters</span><span class="chip">${unitsOf(c.id).length} units</span></div>`, `data-act="openclass" data-id="${c.id}"`); }).join('');
+  const cards = cls.map(c => { const ct = classTheme(c); return sticker(ct, c.name, (ct.decor || [])[0], `<span class="small muted">${esc(c.subtitle || '')}</span><div class="row" style="gap:6px"><span class="chip">Code ${esc(c.code)}</span><span class="chip">${studentsIn(c.id).length} skaters</span><span class="chip">${unitsOf(c.id).length} units</span></div>`, `data-act="openclass" data-id="${c.id}"`, classFont(c)); }).join('');
   return { theme: t, html: banner(t, { eyebrow: st.teacher_name ? `${st.teacher_name}'s HQ` : 'Teacher HQ', title: 'Your classes', sub: 'Make a class, hand out its join code, then load each unit with notes, files, videos and revision quizzes.' }) + `
   <main class="wrap">
    ${cls.length ? `<div class="grid">${cards}</div>` : `<div class="empty"><strong>No classes yet</strong><span>Make your first one below. Each class gets its own join code.</span></div>`}
@@ -387,7 +579,7 @@ function tHome() {
 function tClass() {
   const c = S.classes.find(x => x.id === S.view.classId); if (!c) return tHome();
   const t = classTheme(c), tab = S.ui.tab;
-  const tabs = [['units', 'Units'], ['revision', 'Revision quizzes'], ['students', 'Skaters'], ['log', 'Log'], ['settings', 'Class settings']];
+  const tabs = [['units', 'Units'], ['revision', 'Revision quizzes'], ['markbook', 'Markbook'], ['students', 'Skaters'], ['tricks', 'Tricks'], ['bowl', 'Bowl & achievements'], ['log', 'Log'], ['settings', 'Class settings']];
   let body = '';
   if (tab === 'units') {
     const us = unitsOf(c.id);
@@ -406,6 +598,12 @@ function tClass() {
      <td><div class="row" style="gap:4px;flex-wrap:nowrap">${armBtn('kick|' + s.id + '|' + c.id, 'Remove', 'Confirm')}</div></td></tr>`).join('')}</tbody></table></div></div>
      <p class="small muted">Type a negative number to take coins back. "Remove" takes the skater out of this class only; they keep their coins and gear. A skater who forgets their PIN can be given a new one here.</p>`
       : `<div class="empty"><strong>No skaters yet</strong><span>Give your class the website link and the join code <b>${esc(c.code)}</b>.</span></div>`;
+  } else if (tab === 'markbook') {
+    body = markbookTab(c);
+  } else if (tab === 'tricks') {
+    body = tricksTab(c);
+  } else if (tab === 'bowl') {
+    body = bowlTab(c);
   } else if (tab === 'log') {
     body = logTab(c);
   } else {
@@ -413,11 +611,12 @@ function tClass() {
     <div class="formrow"><label class="f">Class name<input type="text" id="cs-name-${c.id}" value="${esc(c.name)}" required></label><label class="f">Short description<input type="text" id="cs-sub-${c.id}" value="${esc(c.subtitle || '')}"></label></div>
     <label class="f">Announcement (shown at the top of the class page)<textarea id="cs-ann-${c.id}" placeholder="e.g. Test on Friday! Revise unit 2.">${esc(c.announcement || '')}</textarea></label>
     <div><button class="btn primary">Save changes</button></div></form>
+    <div class="panel stack"><h3>Class name font</h3><p class="small muted">Used for this class's title and headings.</p>${fontPicker(c.heading_font || '', 'setclassfont', `data-id="${c.id}"`, true)}</div>
     <div class="panel stack"><h3>Class theme</h3><div class="themepick">${allThemes().map(th => themeTile(th, (c.theme_id || 'griptape') === th.id, `data-act="setclasstheme" data-id="${c.id}" data-theme="${esc(th.id)}"`)).join('')}</div></div>
     <div class="panel stack"><h3>Join code</h3><div class="row"><span style="font-family:var(--f-display);font-size:36px;letter-spacing:.15em">${esc(c.code)}</span><button class="btn" data-act="copy" data-text="${esc(c.code)}">Copy</button><button class="btn" data-act="newcode" data-id="${c.id}">Make a new code</button></div><p class="small muted">A new code stops the old one working. Skaters already in the class stay in it.</p></div>
     <div class="panel stack"><h3>Delete class</h3><p class="small muted">Deletes the class with all its units, resources, uploaded files and quizzes. Skaters keep their coins and gear.</p><div>${armBtn('class|' + c.id, 'Delete this class', 'Yes, delete everything')}</div></div>`;
   }
-  return { theme: t, html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'All classes' }, code: c.code }) + `<main class="wrap">${bowlScene(crewFor(c.id), t, c.name)}<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>${c.announcement && tab === 'units' ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}${body}</main>` };
+  return { theme: t, font: classFont(c), html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'All classes' }, code: c.code }) + `<main class="wrap">${classBowl(c)}<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>${c.announcement && tab === 'units' ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}${body}</main>` };
 }
 function tUnit() {
   const u = S.units.find(x => x.id === S.view.unitId); if (!u) return tHome();
@@ -425,7 +624,7 @@ function tUnit() {
   const fields = k === 'file' ? `<label class="f">File<input type="file" id="nr-file"></label>`
     : k === 'note' ? `<label class="f" style="flex-basis:100%">Note<textarea id="nr-note-${u.id}" placeholder="Key ideas, instructions, homework…"></textarea></label>`
     : `<label class="f">${k === 'youtube' ? 'YouTube link' : 'Web address'}<input type="url" id="nr-url-${u.id}" placeholder="${k === 'youtube' ? 'https://www.youtube.com/watch?v=…' : 'https://…'}"></label>`;
-  return { theme: t, html: banner(t, { eyebrow: c ? c.name : 'Unit', title: u.title, sub: u.description || '', back: { act: 'openclass', attrs: `data-id="${u.class_id}"`, label: 'Back to class' } }) + `
+  return { theme: t, font: classFont(c), html: banner(t, { eyebrow: c ? c.name : 'Unit', title: u.title, sub: u.description || '', back: { act: 'openclass', attrs: `data-id="${u.class_id}"`, label: 'Back to class' } }) + `
   <main class="wrap"><div class="split"><div class="stack">
    <div class="section-h"><h2>Resources</h2>${u.hidden ? '<span class="chip warn">Hidden from skaters</span>' : '<span class="chip ok">Visible to skaters</span>'}</div>
    ${rs.length ? rs.map(r => resCard(r, true)).join('') : `<div class="empty"><strong>Nothing here yet</strong><span>Upload a file, add a YouTube video or a link, or write a note.</span></div>`}
@@ -487,6 +686,7 @@ function tSettings() {
    <div class="formrow"><label class="f">Website name<input type="text" id="st-name" value="${esc(st.site_name)}"></label><label class="f">Your name as skaters see it<input type="text" id="st-teacher" value="${esc(st.teacher_name)}" placeholder="e.g. Mr T"></label><label class="f">Home page theme<select id="st-theme">${themeOptions(st.home_theme)}</select></label></div>
    <h3>Coin rules</h3>
    <div class="formrow"><label class="f">Coins per focus minute<input type="number" min="0" max="10" id="st-rate" value="${st.focus_rate}"></label><label class="f">Daily focus coin limit<input type="number" min="0" id="st-fcap" value="${st.focus_cap}"></label><label class="f">Daily quiz coin limit<input type="number" min="0" id="st-qcap" value="${st.quiz_cap}"></label><label class="f">Welcome bonus<input type="number" min="0" id="st-welcome" value="${st.welcome}"></label></div>
+   <h3>Heading font</h3><p class="small muted">Used for class names and big headings everywhere. Each class can override this in its Class settings. Click to switch.</p>${fontPicker(st.heading_font, 'setsitefont')}
    <h3>The bowl</h3>
    <div class="formrow"><label class="f">Hours of focus to ride the bowl<input type="number" min="0" max="100" step="0.5" id="st-bowlh" value="${st.bowl_hours}"></label><label class="f">Count hours<select id="st-bowlp"><option value="week" ${st.bowl_period !== 'all' ? 'selected' : ''}>This week (resets every Monday)</option><option value="all" ${st.bowl_period === 'all' ? 'selected' : ''}>All time</option></select></label></div>
    <div><button class="btn primary">Save settings</button></div></form>
@@ -549,6 +749,75 @@ function todoPeek() {
   return `<div class="panel stack"><div class="section-h"><h3>Up next</h3><button class="btn sm" data-act="nav" data-to="todo">Open to-do list</button></div>${open.length ? `<ul class="todos">${open.slice(0, 3).map(todoRow).join('')}</ul>${open.length > 3 ? `<p class="small muted">+${open.length - 3} more</p>` : ''}` : '<p class="small muted">Nothing on your list. Add homework and study tasks so you don\'t forget them.</p>'}</div>`;
 }
 
+/* ---------------- markbook ---------------- */
+function mbPick(list, mode) {
+  if (!list.length) return null;
+  if (mode === 'first') return list[0];
+  if (mode === 'latest') return list[list.length - 1];
+  return list.reduce((b, a) => (a.total ? a.score / a.total : 0) > (b.total ? b.score / b.total : 0) ? a : b, list[0]);
+}
+const pctCls = p => p >= .8 ? 'hi' : p >= .5 ? 'mid' : 'lo';
+function markbookTab(c) {
+  const qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), st = studentsIn(c.id).sort((a, b) => tname(a).localeCompare(tname(b)));
+  if (!qs.length) return `<div class="empty"><strong>No quizzes yet</strong><span>Make a quiz in Revision quizzes and results will appear here.</span></div>`;
+  if (!st.length) return `<div class="empty"><strong>No skaters yet</strong><span>Results appear once students join and take quizzes.</span></div>`;
+  const mode = S.ui.mbMode || 'best', ids = new Set(qs.map(x => x.id)), att = S.attempts.filter(a => ids.has(a.quiz_id));
+  const by = {}; for (const a of att) (by[a.student_id + '|' + a.quiz_id] ||= []).push(a);
+  const cell = (sid, qid) => mbPick(by[sid + '|' + qid] || [], mode);
+  const colAvg = qs.map(x => { const v = st.map(s => cell(s.id, x.id)).filter(Boolean).map(a => a.total ? a.score / a.total : 0); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; });
+  const head = qs.map((x, i) => `<th class="mbq"><button class="linkbtn ${S.ui.mbQuiz === x.id ? 'sel' : ''}" data-act="mbquiz" data-id="${x.id}" title="Show question breakdown">${esc(x.title)}</button><span class="small muted">${colAvg[i] == null ? '—' : Math.round(colAvg[i] * 100) + '% avg'}</span></th>`).join('');
+  const rows = st.map(s => {
+    const vals = []; const tds = qs.map(x => { const a = cell(s.id, x.id), n = (by[s.id + '|' + x.id] || []).length; if (!a) return `<td class="mbc none">—</td>`; const p = a.total ? a.score / a.total : 0; vals.push(p);
+      return `<td class="mbc ${pctCls(p)}"><button data-act="mbcell" data-s="${s.id}" data-q="${x.id}" title="See all attempts">${a.score}/${a.total}${n > 1 ? `<sup>×${n}</sup>` : ''}</button></td>`; }).join('');
+    const avg = vals.length ? vals.reduce((p, q) => p + q, 0) / vals.length : null;
+    return `<tr><th scope="row">${esc(tname(s))}</th>${tds}<td class="num mbavg ${avg == null ? '' : pctCls(avg)}">${avg == null ? '—' : Math.round(avg * 100) + '%'}</td></tr>`;
+  }).join('');
+  let detail = '';
+  if (S.ui.mbCell) {
+    const [sid, qid] = S.ui.mbCell.split('|'), s = S.students.find(x => x.id === sid), qz = S.quizzes.find(x => x.id === qid), list = by[S.ui.mbCell] || [];
+    if (s && qz) detail = `<div class="panel stack"><div class="section-h"><h3>${esc(tname(s))} · ${esc(qz.title)}</h3><button class="btn sm" data-act="mbcell" data-s="" data-q="">Close</button></div>
+      <div class="tablewrap"><table><thead><tr><th>Attempt</th><th>Date</th><th>Score</th><th>Coins</th>${(qz.questions || []).map((_, i) => `<th>Q${i + 1}</th>`).join('')}</tr></thead><tbody>
+      ${list.map((a, i) => `<tr><td class="num">${i + 1}</td><td>${esc(new Date(a.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}</td><td class="num mbc ${pctCls(a.total ? a.score / a.total : 0)}">${a.score}/${a.total}</td><td class="num">${a.coins}</td>${(qz.questions || []).map((qq, k) => { const ans = a.answers ? a.answers[k] : undefined; return ans === undefined || ans === null ? `<td class="muted">${a.answers ? '–' : '?'}</td>` : `<td title="${esc(qq.options[ans] || '')}">${ans === qq.answer ? '✅' : '❌'}</td>`; }).join('')}</tr>`).join('')}
+      </tbody></table></div>${list.some(a => !a.answers) ? '<p class="small muted">? = taken before answers were recorded.</p>' : ''}</div>`;
+  }
+  if (S.ui.mbQuiz && qs.some(x => x.id === S.ui.mbQuiz)) {
+    const qz = qs.find(x => x.id === S.ui.mbQuiz), picks = st.map(s => cell(s.id, qz.id)).filter(a => a && a.answers), missing = st.filter(s => !cell(s.id, qz.id));
+    detail += `<div class="panel stack"><div class="section-h"><h3>Question breakdown · ${esc(qz.title)}</h3><button class="btn sm" data-act="mbquiz" data-id="">Close</button></div>
+     <p class="small muted">Based on each student's ${mode === 'best' ? 'best' : mode === 'latest' ? 'latest' : 'first'} attempt (${picks.length} with answers recorded).</p>
+     ${picks.length ? `<div class="stack">${(qz.questions || []).map((qq, k) => { const got = picks.filter(a => a.answers[k] === qq.answer).length, p = got / picks.length, wrong = {}; picks.forEach(a => { const v = a.answers[k]; if (v != null && v !== qq.answer) wrong[v] = (wrong[v] || 0) + 1; }); const top = Object.entries(wrong).sort((x, y) => y[1] - x[1])[0];
+       return `<div class="qrow"><div class="row between" style="gap:8px"><b>Q${k + 1}. ${esc(qq.q)}</b><span class="chip mbc ${pctCls(p)}">${Math.round(p * 100)}% correct</span></div><div class="progress"><i style="width:${Math.round(p * 100)}%"></i></div><span class="small muted">Answer: ${esc(qq.options[qq.answer])}${top ? ` · Most common wrong answer: <b>${esc(qq.options[top[0]] || '?')}</b> (${top[1]})` : ''}</span></div>`; }).join('')}</div>` : '<p class="muted">No attempts with recorded answers yet.</p>'}
+     ${missing.length ? `<p class="small"><b>Not attempted yet:</b> ${missing.map(s => esc(tname(s))).join(', ')}</p>` : ''}</div>`;
+  }
+  return `<div class="row between"><div class="tabs" role="tablist" aria-label="Which attempt">${[['best', 'Best attempt'], ['latest', 'Latest attempt'], ['first', 'First attempt']].map(([k, l]) => `<button role="tab" aria-selected="${mode === k}" data-act="mbmode" data-m="${k}">${l}</button>`).join('')}</div><button class="btn sm" data-act="mbcsv" data-id="${c.id}">Download CSV</button></div>
+   <div class="panel"><div class="tablewrap"><table class="mb"><thead><tr><th>Student</th>${head}<th>Average</th></tr></thead><tbody>${rows}</tbody></table></div>
+   <p class="small muted" style="margin-top:8px">Green 80%+, yellow 50–79%, red under 50%. ×2 means two attempts. Click a quiz name for a question-by-question breakdown, or a score to see every attempt.</p></div>${detail}`;
+}
+
+/* ---------------- tricks ---------------- */
+function tricksTab(c) {
+  const st = studentsIn(c.id).sort((a, b) => tname(a).localeCompare(tname(b)));
+  if (!st.length) return `<div class="empty"><strong>No skaters yet</strong><span>Unlock tricks once students join.</span></div>`;
+  const has = (s, k) => (s.tricks || []).includes(k);
+  return `<div class="panel stack"><p>Unlock tricks as rewards. Skaters pull their tricks in the bowl whenever they're riding (they need their bowl pass). Each lip hit plays the next trick they've unlocked.</p>
+   <div class="tablewrap"><table class="tt"><thead><tr><th>Skater</th>${TRICKS.map(k => `<th><span class="tth">${k.emoji}<br>${esc(k.name)}</span></th>`).join('')}<th></th></tr>
+   <tr><th class="small muted">Whole class</th>${TRICKS.map(k => { const all = st.every(s => has(s, k.id)); return `<th><button class="btn sm" data-act="trickall" data-class="${c.id}" data-trick="${k.id}">${all ? 'None' : 'All'}</button></th>`; }).join('')}<th></th></tr></thead>
+   <tbody>${st.map(s => { const n = (s.tricks || []).length; return `<tr><th scope="row"><span class="row" style="gap:6px;flex-wrap:nowrap">${charSVG(eqOf(s), s.color)}${esc(tname(s))}</span></th>${TRICKS.map(k => `<td><button class="tg" aria-pressed="${has(s, k.id)}" aria-label="${esc(k.name)} for ${esc(s.nickname)}" data-act="settrick" data-id="${s.id}" data-class="${c.id}" data-trick="${k.id}">${has(s, k.id) ? '✓' : ''}</button></td>`).join('')}<td><button class="btn sm" data-act="trickrow" data-id="${s.id}" data-class="${c.id}">${n === TRICKS.length ? 'Clear' : 'All'}</button></td></tr>`; }).join('')}</tbody></table></div></div>`;
+}
+
+/* ---------------- bowl & achievements ---------------- */
+function bowlTab(c) {
+  const { parks, decor } = unlockedRewards(c.id), off = new Set(c.decor_off || []), t = classTheme(c), cur = parks.has(c.park) ? c.park : 'brickyard';
+  const parkAch = id => S.achievements.find(a => a.reward_type === 'park' && a.reward_id === id);
+  const shown = new Set([...decor].filter(d => !off.has(d)));
+  return `<div class="panel stack"><h3>Skateparks</h3><p class="small muted">Your class unlocks new parks by studying together. Pick which unlocked park the bowl uses.</p>
+   <div class="parkgrid">${PARKS.map(p => { const open = parks.has(p.id), a = parkAch(p.id); return `<div class="park ${open ? '' : 'locked'} ${cur === p.id ? 'on' : ''}"><div class="pthumb">${bowlScene([], t, c.name, { park: p.id, thumb: true, decor: shown })}${open ? '' : '<span class="plock">🔒</span>'}</div>
+     <div class="stack" style="gap:4px;padding:10px"><div class="row between" style="gap:6px"><b>${esc(p.name)}</b><span class="chip">${esc(p.where)}</span></div><span class="small muted">${esc(p.blurb)}</span>
+     ${open ? (cur === p.id ? '<span class="chip ok" style="align-self:flex-start">In use</span>' : `<button class="btn sm primary" style="align-self:flex-start" data-act="setpark" data-id="${c.id}" data-park="${p.id}">Use this park</button>`) : `<span class="small"><b>Unlock:</b> ${a ? esc(a.description) : 'Unavailable'}</span>${a ? `<button class="btn sm" style="align-self:flex-start" data-act="unlockach" data-class="${c.id}" data-key="${esc(a.key)}">Unlock now</button>` : ''}`}</div></div>`; }).join('')}</div></div>
+   <div class="panel stack"><h3>Graffiti & stickers</h3><p class="small muted">Unlocked decorations are painted onto the bowl automatically. Hide any you don't want.</p>
+   ${decor.size ? `<div class="row" style="gap:8px">${DECOR.filter(d => decor.has(d.id)).map(d => `<button class="btn sm ${off.has(d.id) ? '' : 'primary'}" aria-pressed="${!off.has(d.id)}" data-act="toggledecor" data-id="${c.id}" data-decor="${d.id}">${off.has(d.id) ? 'Hidden' : 'Showing'}: ${esc(d.name)}</button>`).join('')}</div>` : '<p class="muted">None unlocked yet. Keep studying!</p>'}</div>
+   <div class="panel stack"><h3>Class achievements</h3><p class="small muted">These unlock automatically as the class hits totals. Use "Unlock now" to give one early, for example as a class reward.</p>${achievementsPanel(c, true)}</div>`;
+}
+
 /* ---------------- STUDENT ---------------- */
 const myClasses = () => S.classes.slice().sort(byOrder);
 const homeTheme = () => { const mc = myClasses(); return mc.length ? classTheme(mc[0]) : themeById(site().home_theme); };
@@ -563,7 +832,7 @@ function sHome() {
    <div class="row"><button class="btn primary" data-act="nav" data-to="focus">Start a focus session</button><button class="btn coinbtn" data-act="nav" data-to="shop">Hit the shop</button><button class="btn" data-act="nav" data-to="todo">To-do list</button></div></div></div>
    ${todoPeek()}
    <h2>My classes</h2>
-   ${mc.length ? `<div class="grid">${mc.map(c => { const ct = classTheme(c); return sticker(ct, c.name, (ct.decor || [])[0], `<span class="small muted">${esc(c.subtitle || '')}</span>${c.announcement ? `<span class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📣 ${esc(c.announcement)}</span>` : ''}`, `data-act="openclass" data-id="${c.id}"`); }).join('')}</div>` : `<div class="empty">You're not in any classes right now. Add one with a join code below.</div>`}
+   ${mc.length ? `<div class="grid">${mc.map(c => { const ct = classTheme(c); return sticker(ct, c.name, (ct.decor || [])[0], `<span class="small muted">${esc(c.subtitle || '')}</span>${c.announcement ? `<span class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📣 ${esc(c.announcement)}</span>` : ''}`, `data-act="openclass" data-id="${c.id}"`, classFont(c)); }).join('')}</div>` : `<div class="empty">You're not in any classes right now. Add one with a join code below.</div>`}
    <div class="split"><form class="panel stack" data-form="joinmore"><h3>Join another class</h3><div class="formrow"><label class="f">Join code<input type="text" id="jm-code" maxlength="6" autocomplete="off" style="text-transform:uppercase;letter-spacing:.2em" placeholder="ABC123" required></label><button class="btn primary">Join</button></div></form>
    <div class="panel stack"><h3>Recent coins</h3>${S.log.length ? S.log.slice(0, 8).map(l => `<div class="row between small"><span>${esc(l.reason)}</span><b style="color:${l.amount < 0 ? 'var(--bad)' : 'var(--good)'}">${l.amount > 0 ? '+' : ''}${l.amount}</b></div>`).join('') : '<p class="small muted">Nothing yet.</p>'}</div></div>
   </main>` };
@@ -575,9 +844,10 @@ function quizList(qs) {
 function sClass() {
   const c = S.classes.find(x => x.id === S.view.classId); if (!c) return sHome();
   const t = classTheme(c), us = unitsOf(c.id), qs = S.quizzes.filter(x => x.class_id === c.id).sort(byOrder), crew = S.crew[c.id], board = crew && crew.slice().sort((a, b) => studyMin(b) - studyMin(a)).slice(0, 10);
-  return { theme: t, html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'Home' } }) + `
+  return { theme: t, font: classFont(c), html: banner(t, { eyebrow: c.subtitle || 'Class', title: c.name, back: { act: 'nav', attrs: 'data-to="home"', label: 'Home' } }) + `
   <main class="wrap">${c.announcement ? `<div class="notice"><b>Announcement:</b> ${esc(c.announcement)}</div>` : ''}
-  ${crew ? bowlScene(crew, t, c.name) : '<div class="bowl bowl-loading"><p class="scrawl">Rolling up to the bowl…</p></div>'}
+  ${crew ? classBowl(c) : '<div class="bowl bowl-loading"><p class="scrawl">Rolling up to the bowl…</p></div>'}
+  <details class="panel" id="ach-${c.id}"><summary>Class achievements · unlock new skateparks, graffiti and stickers together</summary><div style="margin-top:14px">${achievementsPanel(c, false)}</div></details>
   <div class="split"><div class="stack"><h2>Units</h2>${us.length ? us.map(u => { const ut = unitTheme(u); return `<button class="unitcard" data-act="openunit" data-id="${u.id}"><span class="sw" style="background:linear-gradient(120deg,${ut.b1},${ut.b2})" aria-hidden="true">${esc((ut.decor || [])[0] || '')}</span><span class="txt"><strong>${esc(u.title)}</strong><span class="small muted">${resOf(u.id).length} resources${S.quizzes.some(x => x.unit_id === u.id) ? ' · revision quiz' : ''}</span></span><span aria-hidden="true" style="font-size:22px">→</span></button>`; }).join('') : "<div class=\"empty\">Your teacher hasn't added any units yet.</div>"}
    <h2 style="margin-top:10px">Revision quizzes</h2>${quizList(qs)}</div>
    <div class="panel taped stack"><h3>Study leaderboard</h3><p class="small muted">Ranked by hours studied ${periodWord()}.</p><div class="lb">${board ? (board.map((b, i) => `<div class="r ${b.is_me ? 'me' : ''}"><span class="rank">${i + 1}</span>${charSVG(b.equipped || {}, b.color)}<span class="n">${esc(b.nickname)}</span><span class="price">${fmtH(studyMin(b))}</span></div>`).join('') || '<p class="small muted">No one yet.</p>') : '<p class="small muted">Loading…</p>'}</div></div></div></main>` };
@@ -585,7 +855,7 @@ function sClass() {
 function sUnit() {
   const u = S.units.find(x => x.id === S.view.unitId); if (!u) return sHome();
   const c = S.classes.find(x => x.id === u.class_id), t = unitTheme(u), rs = resOf(u.id), qs = S.quizzes.filter(x => x.unit_id === u.id);
-  return { theme: t, html: banner(t, { eyebrow: c?.name || '', title: u.title, sub: u.description || '', back: { act: 'openclass', attrs: `data-id="${u.class_id}"`, label: c?.name || 'Back' } }) + `
+  return { theme: t, font: classFont(c), html: banner(t, { eyebrow: c?.name || '', title: u.title, sub: u.description || '', back: { act: 'openclass', attrs: `data-id="${u.class_id}"`, label: c?.name || 'Back' } }) + `
   <main class="wrap"><div class="split"><div class="stack"><h2>Resources</h2>${rs.length ? rs.map(r => resCard(r, false)).join('') : '<div class="empty">No resources in this unit yet.</div>'}</div>
   <div class="stack"><div class="panel taped stack"><h3>Revise this unit</h3>${quizList(qs)}<button class="btn" data-act="focusfor" data-class="${u.class_id}" data-label="${esc(u.title)}">Start a focus session</button></div></div></div></main>` };
 }
@@ -601,6 +871,7 @@ function sFocus() {
   } else {
     const sel = S.ui.focusMin, mc = myClasses();
     body = `<div class="timerwrap"><h2>How long are you riding?</h2><div class="durations">${[10, 15, 25, 40].map(m => `<button data-act="fmin" data-m="${m}" aria-pressed="${m === sel}"><b>${m}</b><span class="small">min · ${m * st.focus_rate} coins</span></button>`).join('')}</div>
+    <label class="f mininput">Or type any number of minutes (1–180)<span class="row" style="gap:8px;flex-wrap:nowrap"><input type="number" id="fx-min" min="1" max="180" step="1" inputmode="numeric" value="${sel}"><span class="small" id="fx-coins" style="white-space:nowrap">= ${sel * st.focus_rate} coins</span></span></label>
     <div class="formrow" style="max-width:580px;width:100%"><label class="f">What are you working on?<input type="text" id="fx-label" maxlength="120" placeholder="e.g. Unit 2 summary notes" value="${esc(S.ui.focusLabel)}"></label><label class="f">Class<select id="fx-class"><option value="">—</option>${mc.map(c => `<option value="${c.id}" ${S.ui.focusClass === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label></div>
     <button class="btn primary big" data-act="fstart" ${S.ui.busy ? 'disabled' : ''}>Start focusing</button>
     <p class="small muted">Up to ${st.focus_cap} focus coins a day. Focus time also counts towards your bowl pass.</p><div style="width:100%;max-width:580px">${bowlPass()}</div></div>`;
@@ -632,6 +903,7 @@ function sDen() {
    <div class="stack" style="gap:6px"><span class="label">Colour</span><div class="swatches">${COLORS.map(c => `<button class="swatch" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${s.color === c}" data-act="equip" data-slot="color" data-id="${c}"></button>`).join('')}</div></div>
    ${pick('character', 'Character')}${pick('hat', 'Headgear')}${pick('eyes', 'Eyewear')}${pick('neck', 'Neckwear')}${pick('pet', 'Pet')}${pick('plant', 'Plant')}${pick('gear', 'Gear')}
   </div></div>
+  <div class="panel stack"><h3>My tricks</h3><p class="small muted">Your teacher unlocks tricks. You pull them in the class skate bowl whenever you've earned your bowl pass.</p><div class="row" style="gap:8px">${TRICKS.map(k => { const on = (s.tricks || []).includes(k.id); return `<span class="chip ${on ? 'ok' : ''}" style="font-size:13px">${on ? k.emoji : '🔒'} ${esc(k.name)}</span>`; }).join('')}</div></div>
   <div class="panel stack"><h3>Log out</h3><p class="small muted">To get back in, you'll need your class code, your skater name <b>${esc(s.nickname)}</b> and your PIN. If you forget your PIN, your teacher can reset it.</p><div>${armBtn('logout', 'Log out on this device', 'Yes, log me out')}</div></div></main>` };
 }
 function sQuiz() {
@@ -690,6 +962,7 @@ document.addEventListener('input', e => {
   if (d) { if (el.dataset.bind) d[el.dataset.bind] = el.dataset.bind === 'per' ? Number(el.value) || 0 : el.value; if (el.dataset.qi) d.questions[+el.dataset.qi].q = el.value; if (el.dataset.oi) d.questions[+el.dataset.oi].options[+el.dataset.oj] = el.value; }
   if (el.dataset.tb && S.customDraft) { S.customDraft[el.dataset.tb] = el.value; paintThemePreview(); }
   if (el.id === 'fx-label') S.ui.focusLabel = el.value;
+  if (el.id === 'fx-min') { const m = parseInt(el.value, 10); if (m >= 1 && m <= 180) { S.ui.focusMin = m; document.querySelectorAll('[data-act=fmin]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.m === m))); const fc = $('#fx-coins'); if (fc) fc.textContent = `= ${m * site().focus_rate} coins`; } }
 });
 document.addEventListener('change', e => {
   const el = e.target, d = S.quizDraft;
@@ -868,6 +1141,7 @@ async function doDelete(k) {
     if (type === 'logout') { await sb.auth.signOut(); S.me = null; S.view = { name: 'home' }; await resolveSession(); return; }
     if (type === 'res') { const r = S.resources.find(x => x.id === id); await q(sb.from('resources').delete().eq('id', id)); await removeFiles([r?.storage_path]); toast('Resource removed'); }
     if (type === 'log') { await q(sb.from('student_log').delete().eq('id', id)); toast('Entry deleted'); }
+    if (type === 'relock') { await q(sb.from('class_unlocks').delete().eq('class_id', id).eq('key', extra)); toast('Locked again'); loadProgress(id); }
     if (type === 'quiz') { await q(sb.from('quizzes').delete().eq('id', id)); toast('Quiz deleted'); }
     if (type === 'theme') { if (S.customDraft?.id === id) S.customDraft = null; await q(sb.from('themes').delete().eq('id', id)); toast('Theme deleted'); }
     if (type === 'kick') { await q(sb.from('enrolments').delete().eq('student_id', id).eq('class_id', extra)); toast('Skater removed from class'); }
@@ -917,13 +1191,60 @@ A.todotoggle = async el => {
 A.tododel = async el => { S.todos = S.todos.filter(y => y.id !== el.dataset.id); render(); try { await q(sb.from('todos').delete().eq('id', el.dataset.id)); } catch (e) { toast(msg(e)); refresh(); } };
 A.todoclear = async () => { const ids = S.todos.filter(y => y.done).map(y => y.id); S.todos = S.todos.filter(y => !y.done); render(); try { if (ids.length) await q(sb.from('todos').delete().in('id', ids)); } catch (e) { toast(msg(e)); refresh(); } };
 
+
+/* markbook, tricks, bowl, font actions */
+A.mbmode = el => { S.ui.mbMode = el.dataset.m; render(); };
+A.mbquiz = el => { S.ui.mbQuiz = el.dataset.id || null; render(); };
+A.mbcell = el => { S.ui.mbCell = el.dataset.s ? el.dataset.s + '|' + el.dataset.q : null; render(); };
+A.mbcsv = el => {
+  const cid = el.dataset.id, c = S.classes.find(x => x.id === cid), qs = S.quizzes.filter(x => x.class_id === cid).sort(byOrder), mode = S.ui.mbMode || 'best';
+  const st = studentsIn(cid).sort((a, b) => tname(a).localeCompare(tname(b)));
+  const rows = [['Student', 'Real name', 'Skater name', ...qs.flatMap(x => [x.title + ' score', x.title + ' %', x.title + ' attempts'])]];
+  for (const s of st) { const r = [tname(s), s.real_name || '', s.nickname]; for (const x of qs) { const l = S.attempts.filter(a => a.student_id === s.id && a.quiz_id === x.id), a = mbPick(l, mode); r.push(a ? `${a.score}/${a.total}` : '', a && a.total ? Math.round(a.score / a.total * 100) : '', l.length); } rows.push(r); }
+  const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = `${(c?.name || 'class').replace(/[^\w-]+/g, '_')}-markbook-${todayStr()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+};
+async function saveTricks(sid, cid, list) {
+  const s = S.students.find(x => x.id === sid); if (s) s.tricks = list;
+  const cr = S.crew[cid]; if (cr) { /* refresh after save */ }
+  await rpc('set_tricks', { p_student: sid, p_tricks: list });
+}
+A.settrick = async el => {
+  const s = S.students.find(x => x.id === el.dataset.id), k = el.dataset.trick; if (!s) return;
+  const list = (s.tricks || []).includes(k) ? s.tricks.filter(x => x !== k) : [...(s.tricks || []), k];
+  s.tricks = list; render();
+  try { await saveTricks(s.id, el.dataset.class, list); loadCrew(el.dataset.class); } catch (e) { toast(msg(e)); refresh(); }
+};
+A.trickrow = async el => {
+  const s = S.students.find(x => x.id === el.dataset.id); if (!s) return;
+  const list = (s.tricks || []).length === TRICKS.length ? [] : TRICKS.map(k => k.id); s.tricks = list; render();
+  try { await saveTricks(s.id, el.dataset.class, list); loadCrew(el.dataset.class); toast(list.length ? `All tricks unlocked for ${s.nickname}` : `Tricks cleared for ${s.nickname}`); } catch (e) { toast(msg(e)); refresh(); }
+};
+A.trickall = async el => {
+  const cid = el.dataset.class, k = el.dataset.trick, st = studentsIn(cid), all = st.every(s => (s.tricks || []).includes(k));
+  for (const s of st) s.tricks = all ? (s.tricks || []).filter(x => x !== k) : [...new Set([...(s.tricks || []), k])];
+  render();
+  try { for (const s of st) await rpc('set_tricks', { p_student: s.id, p_tricks: s.tricks }); loadCrew(cid); toast(`${(TRICKS.find(x => x.id === k) || {}).name} ${all ? 'locked' : 'unlocked'} for the whole class`); } catch (e) { toast(msg(e)); refresh(); }
+};
+A.setpark = el => act(async () => { await q(sb.from('classes').update({ park: el.dataset.park }).eq('id', el.dataset.id)); await refresh(); }, 'Skatepark changed').catch(() => { });
+A.toggledecor = el => act(async () => {
+  const c = S.classes.find(x => x.id === el.dataset.id), d = el.dataset.decor, off = new Set(c.decor_off || []);
+  off.has(d) ? off.delete(d) : off.add(d);
+  await q(sb.from('classes').update({ decor_off: [...off] }).eq('id', c.id)); await refresh();
+}).catch(() => { });
+A.unlockach = el => act(async () => { await q(sb.from('class_unlocks').insert({ class_id: el.dataset.class, key: el.dataset.key, by_teacher: true })); await loadProgress(el.dataset.class); }, 'Unlocked for the class!').catch(() => { });
+A.setsitefont = el => act(async () => { await q(sb.from('settings').update({ heading_font: el.dataset.font }).eq('id', 1)); await refresh(); }, 'Font changed').catch(() => { });
+A.setclassfont = el => act(async () => { await q(sb.from('classes').update({ heading_font: el.dataset.font }).eq('id', el.dataset.id)); await refresh(); }, 'Font changed').catch(() => { });
+
 /* student actions */
 F.joinmore = () => act(async () => { await rpc('join_class', { p_code: $('#jm-code').value.trim().toUpperCase() }); clear('jm-code'); await refresh(); }, 'Joined!').catch(() => { });
 F.nick = () => act(async () => { const n = $('#dn-nick').value.trim(); await rpc('set_nickname', { p_nick: n }); await refresh(); }, 'Name saved').catch(() => { });
-A.fmin = el => { S.ui.focusMin = +el.dataset.m; render(); };
+A.fmin = el => { S.ui.focusMin = +el.dataset.m; const i = $('#fx-min'); if (i) i.value = S.ui.focusMin; render(); };
 A.focusfor = el => { S.ui.focusClass = el.dataset.class; S.ui.focusLabel = el.dataset.label; go({ name: 'focus' }); };
 A.fstart = async () => {
-  const minutes = S.ui.focusMin, label = ($('#fx-label')?.value || '').trim(), cid = $('#fx-class')?.value || null;
+  const typed = parseInt($('#fx-min')?.value, 10), minutes = Number.isFinite(typed) ? typed : S.ui.focusMin, label = ($('#fx-label')?.value || '').trim(), cid = $('#fx-class')?.value || null;
+  if (!(minutes >= 1 && minutes <= 180)) { toast('Pick between 1 and 180 minutes.'); return; }
+  S.ui.focusMin = minutes;
   S.ui.busy = true; render();
   try {
     const id = await rpc('start_focus', { p_minutes: minutes, p_label: label, p_class: cid || null });

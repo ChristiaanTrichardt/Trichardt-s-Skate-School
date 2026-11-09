@@ -319,3 +319,49 @@ input[type=date]{width:100%;background:var(--paper);border:3px solid var(--edge)
 .tick{width:30px;height:30px;flex:none;border:3px solid var(--edge);background:var(--card);cursor:pointer;font-weight:900;font-size:18px;line-height:1;display:grid;place-items:center;color:var(--accent-ink)}
 .tick[aria-pressed="true"]{background:var(--accent)}
 .chip.today{background:var(--yellow);color:#121212}
+
+/* ---------- update 3: fonts, markbook, tricks, parks, achievements ---------- */
+h1,h2{overflow-wrap:anywhere}
+.fontpick{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.fp{border:3px solid var(--edge);background:var(--card);color:var(--ink);padding:10px;cursor:pointer;display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;box-shadow:3px 3px 0 var(--shadow);min-width:0}
+.fp .fp-s{font-size:24px;line-height:1.05;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.fp[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);box-shadow:4px 4px 0 var(--pink)}
+.mininput{max-width:340px;width:100%}
+.mininput input{max-width:140px;font-size:22px!important;font-weight:800!important;text-align:center}
+
+.mb th[scope=row]{white-space:nowrap;font-size:14px;text-transform:none;letter-spacing:0;font-weight:700}
+.mb th.mbq{min-width:110px;vertical-align:bottom}
+.mb th.mbq .linkbtn{display:block;text-transform:none;letter-spacing:0;font-size:13px;line-height:1.25}
+.mb th.mbq .linkbtn.sel{background:var(--accent);color:var(--accent-ink);text-decoration:none;padding:0 4px}
+.mbc{text-align:center;font-variant-numeric:tabular-nums;font-weight:800}
+.mbc button{all:unset;cursor:pointer;display:block;width:100%;padding:2px 0}
+.mbc button:focus-visible{outline:3px dashed var(--pink)}
+.mbc sup{font-size:10px;margin-left:2px;opacity:.75}
+.mbc.hi,.mbavg.hi{background:var(--good-bg);color:var(--good)}
+.mbc.mid,.mbavg.mid{background:color-mix(in srgb,var(--yellow) 35%,var(--card));color:var(--ink)}
+.mbc.lo,.mbavg.lo{background:var(--bad-bg);color:var(--bad)}
+.mbc.none{color:var(--muted);font-weight:500}
+.chip.mbc{border-color:currentColor}
+.qrow{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:2px solid var(--card-2)}
+
+.tt th,.tt td{text-align:center}
+.tt th[scope=row]{text-align:left;white-space:nowrap;font-size:14px;text-transform:none;letter-spacing:0}
+.tt th[scope=row] svg{width:30px;height:30px}
+.tth{display:block;font-size:11px;line-height:1.3;min-width:62px}
+.tg{width:34px;height:34px;border:3px solid var(--edge);background:var(--card);cursor:pointer;font-weight:900;font-size:18px;color:var(--accent-ink)}
+.tg[aria-pressed="true"]{background:var(--accent)}
+
+.parkgrid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.park{border:3px solid var(--edge);background:var(--card);box-shadow:4px 4px 0 var(--shadow);display:flex;flex-direction:column;min-width:0}
+.park.on{box-shadow:4px 4px 0 var(--pink),0 0 0 3px var(--pink)}
+.park .pthumb{position:relative;border-bottom:3px solid var(--edge);line-height:0}
+.park .pthumb svg{width:100%;height:auto;display:block}
+.park.locked .pthumb svg{filter:grayscale(.85) brightness(.75)}
+.plock{position:absolute;inset:0;display:grid;place-items:center;font-size:42px;line-height:1}
+
+.achgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.ach{border:3px dashed var(--muted);padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--card);min-width:0}
+.ach.got{border:3px solid var(--edge);background:color-mix(in srgb,var(--accent) 22%,var(--card));box-shadow:3px 3px 0 var(--shadow)}
+details.panel>summary{font-size:14px}
+
+.bowl .bw-trick{font:900 17px var(--f-body);font-stretch:120%;fill:#FFE14D;stroke:#121212;stroke-width:4px;paint-order:stroke;letter-spacing:.06em;text-transform:uppercase}

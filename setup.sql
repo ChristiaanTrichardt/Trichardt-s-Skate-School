@@ -652,6 +652,196 @@ create policy "own" on public.todos for all to authenticated
 revoke execute on all functions in schema public from public, anon;
 grant execute on all functions in schema public to authenticated;
 
+-- ---------------------------------------------------------------------
+--  Tricks, markbook, achievements, skateparks, fonts (also shipped as update-3.sql)
+-- ---------------------------------------------------------------------
+
+-- Fonts for headings (site default, optional per-class override)
+alter table public.settings add column if not exists heading_font text not null default 'Rubik Dirt';
+alter table public.classes add column if not exists heading_font text not null default '';
+
+-- Which skatepark a class uses, and decorations the teacher has switched off
+alter table public.classes add column if not exists park text not null default 'brickyard';
+alter table public.classes add column if not exists decor_off text[] not null default '{}';
+
+-- Tricks the teacher has unlocked for each student
+alter table public.students add column if not exists tricks text[] not null default '{}';
+grant select (tricks) on public.students to authenticated;
+
+-- Store each answer so the markbook can show question-by-question results
+alter table public.quiz_attempts add column if not exists answers int[];
+
+-- ---------------------------------------------------------------------
+--  Class achievements (edit names/thresholds in Table Editor → achievements)
+-- ---------------------------------------------------------------------
+create table if not exists public.achievements (
+  key text primary key,
+  name text not null,
+  description text not null default '',
+  metric text not null check (metric in ('focus_hours','quizzes','perfect','members','riders')),
+  threshold numeric not null,
+  reward_type text not null check (reward_type in ('park','decor')),
+  reward_id text not null,
+  sort int not null default 0
+);
+alter table public.achievements enable row level security;
+drop policy if exists "read" on public.achievements;
+create policy "read" on public.achievements for select to authenticated using (true);
+drop policy if exists "teacher" on public.achievements;
+create policy "teacher" on public.achievements for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
+
+create table if not exists public.class_unlocks (
+  class_id uuid not null references public.classes(id) on delete cascade,
+  key text not null references public.achievements(key) on delete cascade,
+  unlocked_at timestamptz not null default now(),
+  by_teacher boolean not null default false,
+  primary key (class_id, key)
+);
+alter table public.class_unlocks enable row level security;
+drop policy if exists "read" on public.class_unlocks;
+create policy "read" on public.class_unlocks for select to authenticated using (public.is_teacher() or public.is_enrolled(class_id));
+drop policy if exists "teacher" on public.class_unlocks;
+create policy "teacher" on public.class_unlocks for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
+
+insert into public.achievements (key, name, description, metric, threshold, reward_type, reward_id, sort) values
+  ('first_drop',    'First Drop',        'Study 1 hour as a class',               'focus_hours', 1,   'decor', 'bolt',       1),
+  ('crew_up',       'Crew Up',           '3 skaters join the class',              'members',     3,   'decor', 'tag_crew',   2),
+  ('quiz_kids',     'Quiz Kids',         'Finish 10 quizzes as a class',          'quizzes',     10,  'decor', 'aplus',      3),
+  ('warehouse_key', 'Warehouse Key',     'Study 2 hours as a class',              'focus_hours', 2,   'park',  'warehouse',  4),
+  ('flawless',      'Flawless x3',       'Get 3 perfect quiz scores',             'perfect',     3,   'decor', 'hundred',    5),
+  ('backyard_bash', 'Backyard Bash',     'Study 5 hours as a class',              'focus_hours', 5,   'park',  'backyard',   6),
+  ('double_trouble','Double Trouble',    '2 skaters riding the bowl at once',     'riders',      2,   'decor', 'crown',      7),
+  ('quiz_shred',    'Quiz Shredders',    'Finish 30 quizzes as a class',          'quizzes',     30,  'decor', 'shred',      8),
+  ('beach_day',     'Beach Day',         'Study 10 hours as a class',             'focus_hours', 10,  'park',  'beach',      9),
+  ('full_crew',     'Full Crew',         '10 skaters join the class',             'members',     10,  'decor', 'classpiece', 10),
+  ('on_fire',       'On Fire',           'Study 15 hours as a class',             'focus_hours', 15,  'decor', 'flames',     11),
+  ('rooftop',       'Rooftop Access',    'Study 20 hours as a class',             'focus_hours', 20,  'park',  'rooftop',    12),
+  ('big_brains',    'Big Brains',        'Get 10 perfect quiz scores',            'perfect',     10,  'decor', 'brain',      13),
+  ('packed_bowl',   'Packed Bowl',       '5 skaters riding the bowl at once',     'riders',      5,   'decor', 'checker',    14),
+  ('outback',       'Outback Run',       'Study 35 hours as a class',             'focus_hours', 35,  'park',  'outback',    15),
+  ('quiz_machine',  'Quiz Machine',      'Finish 75 quizzes as a class',          'quizzes',     75,  'decor', 'fire',       16),
+  ('into_woods',    'Into the Woods',    'Study 50 hours as a class',             'focus_hours', 50,  'park',  'forest',     17),
+  ('squad_goals',   'Squad Goals',       '20 skaters join the class',             'members',     20,  'decor', 'horns',      18),
+  ('neon_nights',   'Neon Nights',       'Study 75 hours as a class',             'focus_hours', 75,  'park',  'neon',       19),
+  ('legends',       'Legends Only',      'Get 25 perfect quiz scores',            'perfect',     25,  'decor', 'legends',    20),
+  ('quiz_legends',  'Quiz Legends',      'Finish 150 quizzes as a class',         'quizzes',     150, 'decor', 'board',      21),
+  ('moon',          'One Small Kickflip','Study 100 hours as a class',            'focus_hours', 100, 'park',  'moon',       22),
+  ('golden_era',    'Golden Era',        '10 skaters riding the bowl at once',    'riders',      10,  'decor', 'gold',       23)
+on conflict (key) do nothing;
+
+-- Works out a class's totals and records any newly reached achievements
+create or replace function public.class_progress(p_class uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare v_members int; v_focus numeric; v_quiz int; v_perfect int; v_riders int; v_need numeric; v_period text;
+begin
+  if not (public.is_teacher() or public.is_enrolled(p_class)) then raise exception 'no_access'; end if;
+  select count(*) into v_members from public.enrolments where class_id = p_class;
+  select coalesce(sum(s.focus_min), 0) / 60.0 into v_focus
+    from public.students s join public.enrolments e on e.student_id = s.id where e.class_id = p_class;
+  select count(*), count(*) filter (where a.total > 0 and a.score = a.total) into v_quiz, v_perfect
+    from public.quiz_attempts a join public.quizzes q on q.id = a.quiz_id where q.class_id = p_class;
+  select bowl_hours * 60, bowl_period into v_need, v_period from public.settings where id = 1;
+  select count(*) into v_riders from (
+    select case when v_period = 'all' then s.focus_min
+                else coalesce((select sum(f.minutes) from public.focus_sessions f
+                               where f.student_id = s.id and f.completed_at >= public.week_start()), 0) end as m
+    from public.students s join public.enrolments e on e.student_id = s.id where e.class_id = p_class) x
+  where x.m > 0 and x.m >= v_need;
+  insert into public.class_unlocks (class_id, key)
+    select p_class, a.key from public.achievements a
+    where (case a.metric when 'focus_hours' then v_focus when 'quizzes' then v_quiz when 'perfect' then v_perfect
+                         when 'members' then v_members when 'riders' then v_riders end) >= a.threshold
+  on conflict do nothing;
+  return json_build_object(
+    'stats', json_build_object('focus_hours', round(v_focus, 1), 'quizzes', v_quiz, 'perfect', v_perfect, 'members', v_members, 'riders', v_riders),
+    'unlocks', coalesce((select json_agg(json_build_object('key', key, 'at', unlocked_at, 'by_teacher', by_teacher))
+                         from public.class_unlocks where class_id = p_class), '[]'::json));
+end $$;
+
+-- Teacher unlocks tricks for a student
+create or replace function public.set_tricks(p_student uuid, p_tricks text[])
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_teacher() then raise exception 'not_teacher'; end if;
+  update public.students
+     set tricks = array(select distinct t from unnest(coalesce(p_tricks, '{}')) t
+                        where t = any (array['ollie','kickflip','shuvit','treflip','indy','handplant','spin540','backflip']))
+   where id = p_student;
+end $$;
+
+-- Class crew now includes each skater's tricks
+drop function if exists public.class_crew(uuid);
+create function public.class_crew(p_class uuid)
+returns table (nickname text, color text, equipped jsonb, lifetime int, focus_min int, week_min int, tricks text[], is_me boolean)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.is_teacher() or public.is_enrolled(p_class)) then return; end if;
+  return query
+    select s.nickname, s.color, s.equipped, s.earned, s.focus_min,
+           coalesce((select sum(f.minutes)::int from public.focus_sessions f
+                     where f.student_id = s.id and f.completed_at >= public.week_start()), 0),
+           s.tricks, (s.user_id = auth.uid())
+    from public.students s join public.enrolments e on e.student_id = s.id
+    where e.class_id = p_class
+    order by s.focus_min desc, s.created_at
+    limit 80;
+end $$;
+
+-- Focus sessions can be any length from 1 to 180 minutes
+create or replace function public.start_focus(p_minutes int, p_label text, p_class uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_me uuid := public.my_student_id(); v_id uuid;
+begin
+  if v_me is null then raise exception 'not_student'; end if;
+  if p_minutes is null or p_minutes < 1 or p_minutes > 180 then raise exception 'bad_minutes'; end if;
+  delete from public.focus_sessions where student_id = v_me and completed_at is null;
+  insert into public.focus_sessions (student_id, minutes, label, class_id)
+  values (v_me, p_minutes, left(coalesce(p_label, ''), 120),
+          case when public.is_enrolled(p_class) then p_class else null end)
+  returning id into v_id;
+  return v_id;
+end $$;
+
+-- Quizzes now save each answer for the markbook
+create or replace function public.submit_quiz(p_quiz uuid, p_answers int[])
+returns json language plpgsql security definer set search_path = public as $$
+declare v_me uuid := public.my_student_id(); qz public.quizzes; st public.settings;
+        v_total int; v_score int := 0; v_coins int := 0; v_today int; v_done boolean; i int; v_note text := '';
+begin
+  if v_me is null then raise exception 'not_student'; end if;
+  select * into qz from public.quizzes where id = p_quiz;
+  if qz.id is null or not public.is_enrolled(qz.class_id) then raise exception 'no_quiz'; end if;
+  v_total := jsonb_array_length(qz.questions);
+  for i in 0 .. v_total - 1 loop
+    if p_answers[i + 1] is not null and p_answers[i + 1] = (qz.questions -> i ->> 'answer')::int then
+      v_score := v_score + 1;
+    end if;
+  end loop;
+  select * into st from public.settings where id = 1;
+  select exists (select 1 from public.quiz_attempts where student_id = v_me and quiz_id = p_quiz
+                 and coins > 0 and created_at >= public.day_start()) into v_done;
+  if v_done then
+    v_note := 'already';
+  else
+    select coalesce(sum(coins), 0) into v_today from public.quiz_attempts
+     where student_id = v_me and created_at >= public.day_start();
+    v_coins := v_score * qz.per + case when v_score = v_total and v_total >= 3 then 5 else 0 end;
+    if v_coins > st.quiz_cap - v_today then v_note := 'cap'; end if;
+    v_coins := greatest(0, least(v_coins, st.quiz_cap - v_today));
+  end if;
+  insert into public.quiz_attempts (student_id, quiz_id, score, total, coins, answers)
+  values (v_me, p_quiz, v_score, v_total, v_coins, p_answers[1:v_total]);
+  update public.students set earned = earned + v_coins, quizzes_done = quizzes_done + 1 where id = v_me;
+  if v_coins > 0 then
+    insert into public.coin_log (student_id, amount, reason, kind)
+    values (v_me, v_coins, 'Quiz: ' || qz.title || ' (' || v_score || '/' || v_total || ')', 'quiz');
+  end if;
+  return json_build_object('score', v_score, 'total', v_total, 'coins', v_coins, 'note', v_note);
+end $$;
+
+revoke execute on all functions in schema public from public, anon;
+grant execute on all functions in schema public to authenticated;
+
 -- =====================================================================
 --  LAST STEP (after you've created your teacher login on the website):
 --  replace the email below with yours and run just this line:

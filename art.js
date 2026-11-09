@@ -84,3 +84,70 @@ window.SLOT_LABELS = { character: 'Characters', hat: 'Headgear', eyes: 'Eyewear'
   };
   window.ART = { hexRgb, shade };
 })();
+
+// ---------------------------------------------------------------------
+//  Heading fonts the teacher can pick (all loaded from Google Fonts in index.html)
+// ---------------------------------------------------------------------
+window.FONTS = [
+  { id: 'Rubik Dirt', name: 'Grunge' },
+  { id: 'Knewave', name: 'Skate brush' },
+  { id: 'Bangers', name: 'Comic' },
+  { id: 'Bebas Neue', name: 'Poster' },
+  { id: 'Permanent Marker', name: 'Marker' },
+  { id: 'Sedgwick Ave Display', name: 'Graffiti' },
+  { id: 'Black Ops One', name: 'Stencil' },
+  { id: 'Rubik Mono One', name: 'Chunky' },
+  { id: 'Archivo Black', name: 'Bold block' },
+  { id: 'Special Elite', name: 'Typewriter' },
+];
+window.fontCss = id => `"${(FONTS.find(f => f.id === id) || FONTS[0]).id}","Impact","Arial Black",sans-serif`;
+
+// ---------------------------------------------------------------------
+//  Tricks the teacher can unlock for each skater
+// ---------------------------------------------------------------------
+window.TRICKS = [
+  { id: 'ollie',     name: 'Ollie',      emoji: '⬆️' },
+  { id: 'kickflip',  name: 'Kickflip',   emoji: '🔄' },
+  { id: 'shuvit',    name: 'Pop Shuv-it',emoji: '↔️' },
+  { id: 'treflip',   name: '360 Flip',   emoji: '🌀' },
+  { id: 'indy',      name: 'Indy Grab',  emoji: '🤙' },
+  { id: 'handplant', name: 'Handplant',  emoji: '🤸' },
+  { id: 'spin540',   name: '540 Spin',   emoji: '🌪️' },
+  { id: 'backflip',  name: 'Backflip',   emoji: '🔥' },
+];
+
+// ---------------------------------------------------------------------
+//  Skateparks a class can unlock (key = reward_id in the achievements table)
+// ---------------------------------------------------------------------
+window.PARKS = [
+  { id: 'brickyard', name: 'The Brick Yard',   where: 'Outdoor', blurb: 'Where every crew starts. Brick wall, chain fence, your class colours.' },
+  { id: 'warehouse', name: 'The Warehouse',    where: 'Indoor',  blurb: 'Rain-proof shredding under skylights and hanging lamps.' },
+  { id: 'backyard',  name: 'Backyard Pool',    where: 'Outdoor', blurb: 'An empty backyard pool with blue tiles and a palm tree.' },
+  { id: 'beach',     name: 'Beach Bowl',       where: 'Outdoor', blurb: 'Concrete bowl on the coast with the ocean behind it.' },
+  { id: 'rooftop',   name: 'Rooftop City',     where: 'Outdoor', blurb: 'A bowl on top of a skyscraper at sunset.' },
+  { id: 'outback',   name: 'Outback Ditch',    where: 'Outdoor', blurb: 'Red dirt, gum trees and a big rock on the horizon.' },
+  { id: 'forest',    name: 'Forest Snake Run', where: 'Outdoor', blurb: 'Mossy concrete in the mountains among the pines.' },
+  { id: 'neon',      name: 'Neon Night Park',  where: 'Outdoor', blurb: 'Glow-in-the-dark coping and neon signs.' },
+  { id: 'moon',      name: 'Moon Bowl',        where: 'Space',   blurb: 'Low gravity means way bigger air. Earth in the sky.' },
+];
+
+// ---------------------------------------------------------------------
+//  Graffiti and stickers a class can unlock (key = reward_id)
+// ---------------------------------------------------------------------
+window.DECOR = [
+  { id: 'bolt',       name: 'Lightning sticker',   kind: 'Sticker' },
+  { id: 'tag_crew',   name: '"CREW" tag',          kind: 'Graffiti' },
+  { id: 'aplus',      name: 'A+ sticker',          kind: 'Sticker' },
+  { id: 'hundred',    name: '💯 sticker',          kind: 'Sticker' },
+  { id: 'crown',      name: 'Crown sticker',       kind: 'Sticker' },
+  { id: 'shred',      name: '"SHRED" piece',       kind: 'Graffiti' },
+  { id: 'classpiece', name: 'Class name piece',    kind: 'Graffiti' },
+  { id: 'flames',     name: 'Flame job',           kind: 'Graffiti' },
+  { id: 'brain',      name: 'Big brain sticker',   kind: 'Sticker' },
+  { id: 'checker',    name: 'Checkerboard coping', kind: 'Bowl upgrade' },
+  { id: 'fire',       name: 'Fire sticker',        kind: 'Sticker' },
+  { id: 'horns',      name: 'Rock on sticker',     kind: 'Sticker' },
+  { id: 'legends',    name: '"LEGENDS" chrome piece', kind: 'Graffiti' },
+  { id: 'board',      name: 'Skateboard sticker',  kind: 'Sticker' },
+  { id: 'gold',       name: 'Golden coping',       kind: 'Bowl upgrade' },
+];
